@@ -60,6 +60,9 @@ async fn servercmd(
                 return HttpResponse::BadRequest().finish();
             }
 
+            // Switch to MT tokio runtime
+            let runtime = data.runtime.enter();
+
             let mut rand = SmallRng::from_entropy();
             let mut requests = Vec::new();
             for _ in 1..=count {
@@ -108,6 +111,8 @@ async fn servercmd(
                     None
                 }));
             }
+
+            drop(runtime);
 
             let mut success = 0;
             let mut total_time = Duration::new(0, 0);

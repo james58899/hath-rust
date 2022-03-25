@@ -3,7 +3,7 @@ use std::{io::SeekFrom, sync::Arc, time::Duration};
 use actix_files::NamedFile;
 use actix_web::{
     body::SizedStream,
-    http::header::{ContentDisposition, ContentType, DispositionParam, DispositionType, TryIntoHeaderPair},
+    http::header::{ContentType, TryIntoHeaderPair},
     route,
     web::{BytesMut, Data},
     HttpRequest, HttpResponse, Responder,
@@ -85,7 +85,7 @@ async fn hath(
             // Download worker
             let into2 = info.clone();
             let temp_path2 = temp_path.clone();
-            tokio::spawn(async move {
+            data.runtime.clone().spawn(async move {
                 let mut hasher = Sha1::new();
                 let mut progress = 0;
                 'source: for source in sources.unwrap() {

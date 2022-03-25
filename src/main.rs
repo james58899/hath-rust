@@ -35,7 +35,7 @@ use tokio::{
         mpsc::{self, Sender, UnboundedReceiver},
         watch,
     },
-    time::{sleep_until, Instant},
+    time::{sleep_until, Instant}, runtime::Handle,
 };
 
 use crate::{
@@ -63,6 +63,7 @@ static MAX_KEY_TIME_DRIFT: RangeInclusive<i64> = -300..=300;
 
 #[derive(Clone)]
 struct AppState {
+    runtime: Handle,
     reqwest: reqwest::Client,
     id: i32,
     key: String,
@@ -127,6 +128,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         client.settings().client_port(),
         cert,
         AppState {
+            runtime: Handle::current(),
             reqwest: create_http_client(),
             id,
             key,
