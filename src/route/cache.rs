@@ -61,11 +61,8 @@ async fn hath(
 
             let mut res = file
                 .use_etag(false)
+                .disable_content_disposition()
                 .set_content_type(info.mime_type())
-                .set_content_disposition(ContentDisposition {
-                    disposition: DispositionType::Inline,
-                    parameters: vec![DispositionParam::Filename(file_name)],
-                })
                 .into_response(&req);
             res.headers_mut().insert(cache_header.0, cache_header.1); // TODO bandwidth limit
             return res;
