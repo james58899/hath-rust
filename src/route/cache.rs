@@ -1,4 +1,4 @@
-use std::{io::SeekFrom, sync::Arc};
+use std::{io::SeekFrom, sync::Arc, time::Duration};
 
 use actix_files::NamedFile;
 use actix_web::{
@@ -108,7 +108,14 @@ async fn hath(
                         };
 
                         let mut download = 0;
-                        if let Ok(mut stream) = data.reqwest.get(&source).send().await.map(|r| r.bytes_stream()) {
+                        if let Ok(mut stream) = data
+                            .reqwest
+                            .get(&source)
+                            .timeout(Duration::from_secs(300))
+                            .send()
+                            .await
+                            .map(|r| r.bytes_stream())
+                        {
                             while let Some(bytes) = stream.next().await {
                                 let bytes = match &bytes {
                                     Ok(it) => it,

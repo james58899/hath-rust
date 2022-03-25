@@ -21,7 +21,7 @@ pub fn create_http_client() -> reqwest::Client {
         .user_agent(format!("Hentai@Home {}", CLIENT_VERSION))
         .tcp_keepalive(None)
         .connect_timeout(Duration::from_secs(5))
-        .timeout(Duration::from_secs(3600))
+        .timeout(Duration::from_secs(10))
         .default_headers(headers)
         .http1_title_case_headers()
         .http1_only()

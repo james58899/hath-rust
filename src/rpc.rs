@@ -3,7 +3,7 @@ use std::{
     net::IpAddr,
     str::FromStr,
     sync::atomic::{AtomicBool, AtomicI64, AtomicU16, AtomicU64, Ordering},
-    time::{Duration, Instant},
+    time::{Instant, Duration},
 };
 
 use chrono::{TimeZone, Utc};
@@ -118,7 +118,6 @@ impl RPCClient {
     pub async fn get_cert(&self) -> Option<ParsedPkcs12> {
         self.reqwest
             .get(self.build_url("get_cert", ""))
-            .timeout(Duration::from_secs(10))
             .send()
             .and_then(|res| res.bytes())
             .await
@@ -310,7 +309,7 @@ The program will now terminate.
     }
 
     async fn send_request<U: IntoUrl>(&self, url: U) -> Result<String, reqwest::Error> {
-        match self.reqwest.get(url).send().await {
+        match self.reqwest.get(url).timeout(Duration::from_secs(600)).send().await {
             Ok(res) => Ok(res.text().await?),
             Err(err) => {
                 if err.is_connect() || err.is_timeout() || err.is_status() {
