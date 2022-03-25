@@ -127,14 +127,15 @@ async fn hath(
                                 if download <= progress {
                                     continue;
                                 }
-                                let write_size = download - progress;
-                                let data = &bytes[..write_size as usize];
+                                let write_size = (download - progress) as usize;
+                                let start = bytes.len() - write_size;
+                                let data = &bytes[start..];
                                 if let Err(err) = file.write_all(data).await {
                                     error!("Proxy temp file write fail: {}", err);
                                     continue 'retry;
                                 }
                                 hasher.update(data);
-                                progress += write_size;
+                                progress += write_size as u64;
                                 let _ = tx.send(progress); // Ignore error
                             }
                             if progress == file_size {
