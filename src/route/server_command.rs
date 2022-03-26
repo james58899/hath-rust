@@ -3,7 +3,7 @@ use std::time::{Duration, Instant};
 use actix_web::{route, web::Data, HttpRequest, HttpResponse, Responder};
 use actix_web_lab::extract::Path;
 use chrono::Utc;
-use futures::StreamExt;
+use futures::TryStreamExt;
 use log::debug;
 use rand::{prelude::SmallRng, Rng, SeedableRng};
 use reqwest::Url;
@@ -79,7 +79,7 @@ async fn servercmd(
                     )
                     .as_str(),
                 )
-                .unwrap(); // TODO error handel
+                .unwrap();
                 debug!("Test thread: {}", url);
                 let reqwest = data.reqwest.clone();
                 requests.push(tokio::spawn(async move {
@@ -89,25 +89,20 @@ async fn servercmd(
                                 let start = Instant::now();
 
                                 // Read & count response size
-                                let response_size = res
-                                    .bytes_stream()
-                                    .fold(0, |size, r| async move { size + r.map_or(0, |b| b.len()) })
-                                    .await;
+                                let response_size = res.bytes_stream().try_fold(0, |size, b| async move { Ok(size + b.len()) }).await;
 
                                 // Check response size as excepted
-                                if response_size == size as usize {
+                                if response_size.is_ok() && response_size.unwrap() == size as usize {
                                     return Some(start.elapsed());
-                                } else {
-                                    return None;
                                 }
                             }
                             Err(err) => {
                                 debug!("Connection error: {}", err);
-                                debug!("Retrying.. ({} tries left)", 3 - retry);
-                                continue;
                             }
                         }
+                        debug!("Retrying.. ({} tries left)", 3 - retry);
                     }
+                    debug!("Exhaused retries or aborted getting {}", url);
                     None
                 }));
             }
