@@ -220,6 +220,25 @@ The program will now terminate.
         None
     }
 
+    pub async fn dl_fails(&self, failures: Vec<String>) {
+        if failures.is_empty() { return }
+
+        let failcount = failures.len();
+
+        if !(1..=50).contains(&failcount) {
+            // if we're getting a lot of distinct failures, it's probably a problem with this client
+            return
+        }
+
+        let mut str = (failcount*30).to_string();
+        str += &failures.join(";");
+
+        let srv_res = self.send_action("dlfails", Some(&str)).await;
+        // TODO report rpc server failure.
+
+        debug!("Reported {} download failures with response {}.", failcount, if srv_res.is_ok() {"OK"} else {"Fail"});
+    }
+
     pub async fn shutdown(&self) {
         if self.running.swap(false, Ordering::Relaxed) {
             let _ = self.send_action("client_stop", None).await;
