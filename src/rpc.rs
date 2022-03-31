@@ -117,8 +117,7 @@ impl RPCClient {
 
     pub async fn get_cert(&self) -> Option<ParsedPkcs12> {
         self.reqwest
-            .get(self.build_url("get_cert", ""))
-            .timeout(Duration::from_secs(10))
+            .get(self.build_url("get_cert", "", None))
             .send()
             .and_then(|res| res.bytes())
             .await
@@ -308,8 +307,12 @@ The program will now terminate.
     }
 
     async fn send_action(&self, action: &str, additional: Option<&str>) -> Result<ApiResponse, reqwest::Error> {
+        self.send_action1(action, additional, None).await
+    }
+
+    async fn send_action1(&self, action: &str, additional: Option<&str>, endpoint: Option<&str>) -> Result<ApiResponse, reqwest::Error> {
         let additional = additional.unwrap_or("");
-        let mut result = self.send_request(self.build_url(action, additional)).await.map(|body| {
+        let mut result = self.send_request(self.build_url(action, additional, endpoint)).await.map(|body| {
             debug!("Received response: {}", body);
             parse_response(&body)
         });
@@ -318,7 +321,7 @@ The program will now terminate.
             if response.is_key_expired() {
                 warn!("Server reported expired key; attempting to refresh time from server and retrying");
                 let _ = self.check_stat().await; // Sync clock
-                result = self.send_request(self.build_url(action, additional)).await.map(|body| {
+                result = self.send_request(self.build_url(action, additional, endpoint)).await.map(|body| {
                     debug!("Received response: {}", body);
                     parse_response(&body)
                 })
@@ -340,7 +343,7 @@ The program will now terminate.
         }
     }
 
-    fn build_url(&self, action: &str, additional: &str) -> Url {
+    fn build_url(&self, action: &str, additional: &str, endpoint: Option<&str>) -> Url {
         let mut url = self.api_base.read().clone();
         let timestamp = &Utc::now()
             .checked_add_signed(chrono::Duration::seconds(self.clock_offset.load(Ordering::Relaxed)))
@@ -351,6 +354,10 @@ The program will now terminate.
             "hentai@home-{}-{}-{}-{}-{}",
             action, additional, self.id, timestamp, self.key
         ));
+
+        if let Some(endpoint) = endpoint {
+            url.path_segments_mut().unwrap().pop().push(endpoint);
+        }
 
         url.query_pairs_mut()
             .append_pair("act", action)
