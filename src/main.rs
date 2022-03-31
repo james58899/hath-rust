@@ -50,6 +50,7 @@ mod logger;
 mod route;
 mod rpc;
 mod util;
+pub mod gallery_downloader;
 
 #[cfg(not(target_env = "msvc"))]
 use tikv_jemallocator::Jemalloc;

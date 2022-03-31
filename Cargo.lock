@@ -765,6 +765,7 @@ dependencies = [
  "openssl-src",
  "parking_lot",
  "rand",
+ "regex",
  "reqwest",
  "tempfile",
  "tikv-jemallocator",
