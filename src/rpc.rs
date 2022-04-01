@@ -238,6 +238,16 @@ The program will now terminate.
         debug!("Reported {} download failures with response {}.", failcount, if srv_res.is_ok() {"OK"} else {"Fail"});
     }
 
+    pub async fn fetch_queue(&self) -> Option<Vec<String>> {
+        if let Ok(res) = self.send_action1("fetchqueue", None, Some("dl")).await {
+            if res.is_ok() {
+                return Some(res.data)
+            }
+        };
+
+        None
+    }
+
     pub async fn shutdown(&self) {
         if self.running.swap(false, Ordering::Relaxed) {
             let _ = self.send_action("client_stop", None).await;
