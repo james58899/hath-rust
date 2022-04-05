@@ -2,8 +2,12 @@ use std::{
     collections::HashMap,
     net::IpAddr,
     str::FromStr,
-    sync::atomic::{AtomicBool, AtomicI64, AtomicU16, AtomicU64, Ordering},
-    time::{Instant, Duration},
+    sync::{
+        atomic::{AtomicBool, AtomicI64, AtomicU16, AtomicU64, Ordering},
+        Arc,
+    },
+    time::{Duration, Instant},
+    vec,
 };
 
 use chrono::{TimeZone, Utc};
@@ -30,7 +34,7 @@ pub struct RPCClient {
     reqwest: reqwest::Client,
     rpc_servers: RwLock<Vec<String>>,
     running: AtomicBool,
-    settings: Settings,
+    settings: Arc<Settings>,
 }
 
 pub struct Settings {
@@ -61,6 +65,27 @@ impl Settings {
     pub fn verify_cache(&self) -> bool {
         self.verify_cache.load(Ordering::Relaxed)
     }
+
+    fn update(&self, settings: HashMap<String, String>) {
+        // Update Host & Port
+        if let Some(host) = settings.get("host") {
+            *self.client_host.write() = host.to_owned();
+        }
+        if let Some(port) = settings.get("port").and_then(|s| s.parse().ok()) {
+            self.client_port.store(port, Ordering::Relaxed);
+        }
+        if let Some(size) = settings.get("disklimit_bytes").and_then(|s| s.parse().ok()) {
+            self.size_limit.store(size, Ordering::Relaxed);
+        }
+        if let Some(static_range) = settings.get("static_ranges").map(|s| s.split(';').map(|s| s.to_string()).collect()) {
+            *self.static_range.write() = static_range;
+        }
+        if let Some(verify_cache) = settings.get("verify_cache").map(|s| s == "true") {
+            self.verify_cache.store(verify_cache, Ordering::Relaxed);
+        }
+
+        // TODO update other settings
+    }
 }
 
 impl RPCClient {
@@ -73,13 +98,13 @@ impl RPCClient {
             reqwest: create_http_client(),
             rpc_servers: RwLock::new(vec![]),
             running: AtomicBool::new(false),
-            settings: Settings {
+            settings: Arc::new(Settings {
                 client_port: AtomicU16::new(0),
                 client_host: RwLock::new(String::new()),
                 size_limit: AtomicU64::new(u64::MAX),
                 static_range: RwLock::new(vec![]),
                 verify_cache: AtomicBool::new(false),
-            },
+            }),
         }
     }
 
@@ -133,8 +158,8 @@ impl RPCClient {
     }
 
     /// Get a reference to the rpcclient's settings.
-    pub fn settings(&self) -> &Settings {
-        &self.settings
+    pub fn settings(&self) -> Arc<Settings> {
+        self.settings.clone()
     }
 
     pub fn get_timestemp(&self) -> i64 {
@@ -364,20 +389,7 @@ The program will now terminate.
             self.change_server();
         }
         // Update Host & Port
-        if let Some(host) = settings.get("host") {
-            *self.settings.client_host.write() = host.to_owned();
-        }
-        if let Some(port) = settings.get("port").and_then(|s| s.parse().ok()) {
-            self.settings.client_port.store(port, Ordering::Relaxed);
-        }
-        if let Some(size) = settings.get("disklimit_bytes").and_then(|s| s.parse().ok()) {
-            self.settings.client_port.store(size, Ordering::Relaxed);
-        }
-        if let Some(static_range) = settings.get("static_ranges").map(|s| s.split(';').map(|s| s.to_string()).collect()) {
-            *self.settings.static_range.write() = static_range;
-        }
-
-        // TODO update other settings
+        self.settings.update(settings);
     }
 
     fn change_server(&self) {
