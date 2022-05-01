@@ -67,6 +67,7 @@ impl CacheManager {
         if new.settings.verify_cache() {
             // Force check cache
             new.scan_cache(16).await?;
+            CacheManager::start_background_task(new.clone());
         } else {
             // Background cache scan
             let manager = new.clone();
@@ -75,28 +76,9 @@ impl CacheManager {
                     error!("Cache scan error: {}", err);
                     let _ = shutdown.send(());
                 }
+                CacheManager::start_background_task(manager);
             });
         }
-
-        // background task
-        let manager = Arc::downgrade(&new);
-        new.runtime.spawn(async move {
-            let mut counter: u32 = 0;
-            let mut next_run = Instant::now() + Duration::from_secs(10);
-            while let Some(manager) = manager.upgrade() {
-                sleep_until(next_run).await;
-
-                // Cycle LRU cache
-                manager.cycle_lru_cache();
-                // Check cache size every 10min
-                if counter % 60 == 0 {
-                    manager.check_cache_usage().await;
-                }
-
-                counter = counter.wrapping_add(1);
-                next_run = Instant::now() + Duration::from_secs(10);
-            }
-        });
 
         Ok(new)
     }
@@ -172,6 +154,27 @@ impl CacheManager {
                 })
                 .await;
         }
+    }
+
+    fn start_background_task(new: Arc<Self>) {
+        let manager = Arc::downgrade(&new);
+        new.runtime.spawn(async move {
+            let mut counter: u32 = 0;
+            let mut next_run = Instant::now() + Duration::from_secs(10);
+            while let Some(manager) = manager.upgrade() {
+                sleep_until(next_run).await;
+
+                // Cycle LRU cache
+                manager.cycle_lru_cache();
+                // Check cache size every 10min
+                if counter % 60 == 0 {
+                    manager.check_cache_usage().await;
+                }
+
+                counter = counter.wrapping_add(1);
+                next_run = Instant::now() + Duration::from_secs(10);
+            }
+        });
     }
 
     async fn mark_recently_accessed(&self, info: &CacheFileInfo, update_file: bool) {
