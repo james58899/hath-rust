@@ -1,62 +1,26 @@
-use log::{warn, debug};
+use log::debug;
 use regex::Regex;
 
-use crate::rpc::RPCClient;
+struct GalleryDownloader {}
 
-pub struct GalleryDownloader<'a> {
-    client: &'a RPCClient,
-    failures: Vec<String>,
-}
-
-struct FileMeta {
-    page: usize,
-    fileindex: usize,
-    xres: String,
-    sha1hash: String,
-    filetype: String,
-    filename: String,
-}
-
-struct GalleryMeta {
-    gid: i32,
-    filecount: usize,
-    minxres: String,
-    title: String,
-    filemeta: Vec<FileMeta>,
-    information: String,
-}
-
-impl GalleryDownloader<'_> {
-    pub async fn new(client: &RPCClient) -> GalleryDownloader<'_> {
-        GalleryDownloader {
-            client,
-            failures: Vec::new(),
-        }
+impl GalleryDownloader {
+    pub fn new() -> GalleryDownloader {
+        GalleryDownloader {}
     }
 
-    async fn get_meta(&self, downloaded_payload: Option<&str>) -> Vec<String> {
-        let client = self.client;
-
-        // todo downloaded payload.
-        client.fetch_queue().await.unwrap()
-    }
-
-    async fn parse_meta(&self, meta: &str) -> GalleryMeta {
-        match meta {
-            "INVALID_REQUEST" => warn!("GalleryDownloader: Request was rejected by the server"),
-            "NO_PENDING_DOWNLOADS" => (),
-            _ => debug!("GalleryDownloader: Started gallery metadata parsing.")
-        }
-
+    fn parser(raw_gallery: String) -> GalleryMeta {
+        debug!("GalleryDownloader: Started gallery metadata parsing");
+        
         let mut gid = 0;
-        let mut filecount: usize = 0;
+        let mut filecount = 0;
         let mut minxres = String::new();
+        let mut xres_title = String::new();
         let mut title = String::new();
-        let mut filemeta: Vec<FileMeta> = Vec::new();
         let mut information = String::new();
+        let mut gallery_files: Vec<GalleryFile> = Vec::new();
 
         let mut parse_state = 0;
-        for s in meta.split('\n') {
+        for s in raw_gallery.split('\n') {
             if s == "FILELIST" && parse_state == 0 {
                 parse_state = 1;
                 continue;
@@ -67,10 +31,12 @@ impl GalleryDownloader<'_> {
                 continue;
             }
 
-            if parse_state < 2 && s.is_empty() { continue; }
+            if parse_state < 2 && s.is_empty() {
+                continue;
+            }
 
             if parse_state == 0 {
-                let split: Vec<&str> = s.splitn(2, ' ').collect();
+                let split = s.splitn(2, ' ').collect::<Vec<&str>>();
 
                 match split[0] {
                     "GID" => {
@@ -82,66 +48,130 @@ impl GalleryDownloader<'_> {
                         debug!(" GalleryDownloader: Parsed filecount={}", filecount);
                     },
                     "MINXRES" => {
-                        let pattern = Regex::new(r"^org|\\d+$").unwrap();
-                        if pattern.is_match(split[1]) {
+                        if Regex::new(r"^org|\\d+$").unwrap().is_match(split[1]) {
                             minxres = split[1].to_string();
                             debug!("GalleryDownloader: Parsed minxres={}", minxres);
                         }
                         else {
-                            println!("Encountered invalid minxres");
+                            panic!("Encountered invalid minxres");
                         }
                     },
                     "TITLE" => {
-                        let pattern = Regex::new(r#"(\*|"|\\|<|>|:\|\?)"#).unwrap().replace_all(split[1], "");
-                        title = pattern.as_ref().to_string();
+                        let pattern = Regex::new(r#"(\*|"|\\|<|>|:\|\?)"#).unwrap().replace_all(split[1], "").as_ref().to_string();
+                        let pattern = Regex::new(r"\s+").unwrap().replace_all(&pattern, " ").as_ref().to_string();
+                        let pattern = Regex::new(r"(^\s+|\s+$)").unwrap().replace_all(&pattern, "").as_ref().to_string();
+                        title = pattern;
                         debug!("GalleryDownloader: Parsed title={}", title);
 
                         // MINXRES must be passed before TITLE for this to work. the only purpose is to make distinct titles
-                        // let xres_title = if minxres == "org" { String::new() } else { String::from("-") + minxres + "x" };
-                        // let xres_title = xres_title.as_str();
+                        xres_title = if minxres == "org" { String::new() } else { format!("-{}x", minxres) };
                     }
                     _ => (),
                 }
+
             }
             else if parse_state == 1 {
+                let split = s.splitn(6, ' ').collect::<Vec<&str>>();
+
                 // entries are on the form: page fileindex xres sha1hash filetype filename
-                let split: Vec<&str> = s.splitn(6, ' ').collect();
-                // let page = split[0].parse::<usize>().unwrap();
-                // let fileindex = split[1].parse::<usize>().unwrap();
-                // let xres = split[2];
+                let page = split[0].parse::<usize>().unwrap();
+                let fileindex = split[1].parse::<usize>().unwrap();
+                let xres = split[2].to_string();
 
                 // sha1hash can be "unknown" if the file has not been generated yet
-                // let sha1hash = if split[3] == "unknown" { "" } else { split[3] };
+                let sha1hash = if split[3] == "unknown" { String::new() } else { split[3].to_string() };
 
                 // the server guarantees that all filenames in the meta file are unique, and that none of them are reserved device filenames
-                // let filetype = split[4];
-                // let filename = split[5];
+                let filetype = split[4].to_string();
+                let filename = split[5].to_string();
 
-                // savepoint Note: perform download task at another function.
-                filemeta.push(
-                    FileMeta {
-                        page: split[0].parse::<usize>().unwrap(), 
-                        fileindex: split[1].parse::<usize>().unwrap(),
-                        xres: split[2].to_string(),
-                        sha1hash: if split[3] == "unknown" { "".to_string() } else { split[3].to_string() },
-                        filetype: split[4].to_string(),
-                        filename: split[5].to_string(),
-                    }
-                );
+                gallery_files.push(GalleryFile::new(
+                    page,
+                    fileindex,
+                    xres,
+                    sha1hash,
+                    filetype,
+                    filename
+                ))
             }
             else {
-                information+= s;
-                information+= "\n";
+                panic!("GalleryDownloader: Failed to parse metadata for new gallery.");
             }
         }
 
-        GalleryMeta {
+        GalleryMeta::new(
             gid,
             filecount,
             minxres,
+            xres_title,
             title,
-            filemeta,
             information,
+            gallery_files,
+            vec![], // TODO
+        )
+    }
+}
+
+struct GalleryFile {
+    page: usize,
+    fileindex: usize,
+    xres: String,
+    expected_sha1_hash: String,
+    filetype: String,
+    filename: String,
+}
+
+impl GalleryFile {
+    pub fn new(
+        page: usize, 
+        fileindex: usize, 
+        xres: String,
+        expected_sha1_hash: String,
+        filetype: String,
+        filename: String,
+    ) -> GalleryFile {
+        GalleryFile {
+            page,
+            fileindex,
+            xres,
+            expected_sha1_hash,
+            filetype,
+            filename,
+        }
+    }
+}
+
+struct GalleryMeta {
+    gid: i32,
+    filecount: usize,
+    minxres: String,
+    xres_title: String,
+    title: String,
+    information: String,
+    gallery_files: Vec<GalleryFile>,
+    failures: Vec<String>,
+}
+
+impl GalleryMeta {
+    pub fn new(
+        gid: i32,
+        filecount: usize,
+        minxres: String,
+        xres_title: String,
+        title: String,
+        information: String,
+        gallery_files: Vec<GalleryFile>,
+        failures: Vec<String>,
+    ) -> GalleryMeta {
+        GalleryMeta { 
+            gid,
+            filecount,
+            minxres,
+            xres_title,
+            title,
+            information,
+            gallery_files,
+            failures,
         }
     }
 }
