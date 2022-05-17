@@ -15,7 +15,7 @@ use filesize::{file_real_size, file_real_size_fast};
 use filetime::{set_file_mtime, FileTime};
 use futures::{stream, StreamExt, TryFutureExt};
 use hex::FromHex;
-use log::{debug, error, warn};
+use log::{debug, error, warn, info};
 use mime::Mime;
 use openssl::sha::Sha1;
 use parking_lot::{Mutex, RwLock};
@@ -64,13 +64,15 @@ impl CacheManager {
             total_size: Arc::new(AtomicU64::new(0)),
         });
 
+        let manager = new.clone();
         if new.settings.verify_cache() {
             // Force check cache
+            info!("Start force cache check");
             new.scan_cache(16).await?;
-            CacheManager::start_background_task(new.clone());
+            CacheManager::start_background_task(manager);
         } else {
             // Background cache scan
-            let manager = new.clone();
+            info!("Start background cache scan");
             new.runtime.spawn(async move {
                 if let Err(err) = manager.scan_cache(1).await {
                     error!("Cache scan error: {}", err);
@@ -215,27 +217,32 @@ impl CacheManager {
         let mut root = read_dir(&self.cache_dir).map_ok(ReadDirStream::new).await?;
         while let Some(l1) = root.next().await.transpose()? {
             let l1_path = l1.path();
-            if l1_path.is_dir() {
-                let mut l1_stream = read_dir(&l1_path).map_ok(ReadDirStream::new).await?;
-                while let Some(l2) = l1_stream.next().await.transpose()? {
-                    let l2_path = l2.path();
-                    if l2_path.is_dir() {
-                        if static_range
-                            .iter()
-                            .any(|sr| l1.file_name().eq_ignore_ascii_case(&sr[0..2]) && l2.file_name().eq_ignore_ascii_case(&sr[2..4]))
-                        {
-                            dirs.push(l2_path);
-                        } else {
-                            warn!("Found cache dir but not in static range: {}", l2_path.to_str().unwrap_or_default());
-                        }
-                    }
+            if !l1_path.is_dir() {
+                warn!("Found unexpected file in cache dir: {}", l1_path.to_str().unwrap_or_default());
+                continue;
+            };
+
+            let mut l1_stream = read_dir(&l1_path).map_ok(ReadDirStream::new).await?;
+            while let Some(l2) = l1_stream.next().await.transpose()? {
+                let l2_path = l2.path();
+                if !l2_path.is_dir() {
+                    warn!("Found unexpected file in cache dir: {}", l2_path.to_str().unwrap_or_default());
+                    continue;
+                };
+
+                let mut hash = l1.file_name().clone();
+                hash.push(l2.file_name());
+                if static_range.iter().any(|sr| hash.eq_ignore_ascii_case(sr)) {
+                    dirs.push(l2_path);
+                } else {
+                    warn!("Found cache dir but not in static range: {}", l2_path.to_str().unwrap_or_default());
                 }
             }
         }
 
         debug!("Cache dir number: {}", &dirs.len());
 
-        let lru_cutoff = FileTime::from_system_time(SystemTime::now() - Duration::from_secs(60 * 60 * 24 * 7));
+        let lru_cutoff = FileTime::from_system_time(SystemTime::now() - Duration::from_secs(60 * 60 * 24 * 7)); // 1 week
         let scan_task = stream::iter(dirs.into_iter().map(|dir| async move {
             let mut time = FileTime::now();
             let mut stream = read_dir(&dir).map_ok(ReadDirStream::new).await?;
@@ -247,6 +254,7 @@ impl CacheManager {
                 }
                 let metadata = metadata.unwrap();
                 if metadata.is_dir() {
+                    warn!("Found unexpected dir in cache dir: {}", &entry.path().to_str().unwrap_or_default());
                     continue;
                 }
 
