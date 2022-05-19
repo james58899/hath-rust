@@ -1,7 +1,7 @@
 use std::{
     collections::HashMap,
     fmt::Display,
-    fs::{File, Metadata},
+    fs::{remove_file, File, Metadata},
     io::Error,
     path::{Path, PathBuf},
     sync::{
@@ -15,13 +15,13 @@ use filesize::{file_real_size, file_real_size_fast};
 use filetime::{set_file_mtime, FileTime};
 use futures::{stream, StreamExt, TryFutureExt};
 use hex::FromHex;
-use log::{debug, error, warn, info};
+use log::{debug, error, info, warn};
 use mime::Mime;
 use openssl::sha::Sha1;
 use parking_lot::{Mutex, RwLock};
 use tempfile::TempPath;
 use tokio::{
-    fs::{copy, create_dir_all, metadata, read_dir, rename, DirEntry},
+    fs::{copy, create_dir_all, metadata, read_dir, remove_dir_all, rename, DirEntry},
     io::AsyncReadExt,
     runtime::Handle,
     sync::mpsc::UnboundedSender,
@@ -146,12 +146,12 @@ impl CacheManager {
             let _ = self
                 .runtime
                 .spawn_blocking(move || match file_real_size(&path) {
-                    Ok(size) => {
-                        // TODO real delete
-                        // if remove_file(&path).is_ok() {
-                        total_size.fetch_sub(size, Relaxed);
-                        // }
-                    }
+                    Ok(size) => match remove_file(&path) {
+                        Ok(_) => {
+                            total_size.fetch_sub(size, Relaxed);
+                        }
+                        Err(err) => error!("Delete cache file error: path={:?}, err={}", &path, err),
+                    },
                     Err(err) => error!("Read cache file size error: path={:?}, err={}", &path, err),
                 })
                 .await;
@@ -235,7 +235,10 @@ impl CacheManager {
                 if static_range.iter().any(|sr| hash.eq_ignore_ascii_case(sr)) {
                     dirs.push(l2_path);
                 } else {
-                    warn!("Found cache dir but not in static range: {}", l2_path.to_str().unwrap_or_default());
+                    warn!("Delete not in static range dir: {}", l2_path.to_str().unwrap_or_default());
+                    if let Err(err) = remove_dir_all(&l2_path).await {
+                        error!("Delete cache dir error: path={:?}, err={}", &l2_path, err);
+                    }
                 }
             }
         }
@@ -280,11 +283,13 @@ impl CacheManager {
                     }
                     let actual_hash = hasher.finish();
                     if actual_hash != info.hash {
-                        error!(
-                            "Cache file hash mismatch: path={:?}, hash={:x?}, actual={:x?}",
+                        warn!(
+                            "Delete corrupt cache file: path={:?}, hash={:x?}, actual={:x?}",
                             &path, &info.hash, &actual_hash
                         );
-                        // TODO delete broken cache file
+                        if let Err(err) = tokio::fs::remove_file(&path).await {
+                            error!("Delete corrupt cache file error: path={:?}, err={}", &path, err);
+                        }
                         continue;
                     }
                 }
@@ -397,7 +402,7 @@ impl CacheManager {
                 }
                 let size = size.unwrap();
 
-                debug!("Remove old cache file: {:?}", &path);
+                debug!("Delete old cache file: {:?}", &path);
                 self.remove_cache(&info.unwrap()).await;
 
                 need_free = need_free.saturating_sub(size);
