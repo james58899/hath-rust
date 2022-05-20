@@ -5,7 +5,7 @@ use std::{
     io::Error,
     path::{Path, PathBuf},
     sync::{
-        atomic::{AtomicU64, Ordering::Relaxed},
+        atomic::{AtomicU64, AtomicUsize, Ordering::Relaxed},
         Arc,
     },
     time::{Duration, SystemTime},
@@ -246,73 +246,79 @@ impl CacheManager {
         debug!("Cache dir number: {}", &dirs.len());
 
         let lru_cutoff = FileTime::from_system_time(SystemTime::now() - Duration::from_secs(60 * 60 * 24 * 7)); // 1 week
-        let scan_task = stream::iter(dirs.into_iter().map(|dir| async move {
-            let mut time = FileTime::now();
-            let mut stream = read_dir(&dir).map_ok(ReadDirStream::new).await?;
-            while let Some(entry) = stream.next().await.transpose()? {
-                let metadata = metadata(entry.path()).await;
-                if let Err(err) = metadata {
-                    error!("Read cache file metadata error: path={:?}, err={}", &entry.path(), err);
-                    continue;
-                }
-                let metadata = metadata.unwrap();
-                if metadata.is_dir() {
-                    warn!("Found unexpected dir in cache dir: {}", &entry.path().to_str().unwrap_or_default());
-                    continue;
-                }
-
-                // Parse info
-                let info = entry.file_name().to_str().and_then(CacheFileInfo::from_file_id);
-                if info.is_none() {
-                    warn!("Invalid cache file: {:?}", entry.path());
-                    continue;
-                }
-                let info = info.unwrap();
-
-                if self.settings.verify_cache() {
-                    let path = entry.path();
-                    let mut hasher = Sha1::new();
-                    let mut file = tokio::fs::File::open(&path).await?;
-                    let mut buf = vec![0; 1024 * 1024]; // 1MiB
-                    loop {
-                        let n = file.read(&mut buf).await?;
-                        if n == 0 {
-                            break;
-                        }
-                        hasher.update(&buf[0..n]);
-                    }
-                    let actual_hash = hasher.finish();
-                    if actual_hash != info.hash {
-                        warn!(
-                            "Delete corrupt cache file: path={:?}, hash={:x?}, actual={:x?}",
-                            &path, &info.hash, &actual_hash
-                        );
-                        if let Err(err) = tokio::fs::remove_file(&path).await {
-                            error!("Delete corrupt cache file error: path={:?}, err={}", &path, err);
-                        }
+        let counter = &AtomicUsize::new(0);
+        let total = dirs.len();
+        let scan_task = stream::iter(dirs)
+            .map(|dir| async move {
+                let mut time = FileTime::now();
+                let mut stream = read_dir(&dir).map_ok(ReadDirStream::new).await?;
+                while let Some(entry) = stream.next().await.transpose()? {
+                    let metadata = metadata(entry.path()).await;
+                    if let Err(err) = metadata {
+                        error!("Read cache file metadata error: path={:?}, err={}", &entry.path(), err);
                         continue;
                     }
+                    let metadata = metadata.unwrap();
+                    if metadata.is_dir() {
+                        warn!("Found unexpected dir in cache dir: {}", &entry.path().to_str().unwrap_or_default());
+                        continue;
+                    }
+
+                    // Parse info
+                    let info = entry.file_name().to_str().and_then(CacheFileInfo::from_file_id);
+                    if info.is_none() {
+                        warn!("Invalid cache file: {:?}", entry.path());
+                        continue;
+                    }
+                    let info = info.unwrap();
+
+                    if self.settings.verify_cache() {
+                        let path = entry.path();
+                        let mut hasher = Sha1::new();
+                        let mut file = tokio::fs::File::open(&path).await?;
+                        let mut buf = vec![0; 1024 * 1024]; // 1MiB
+                        loop {
+                            let n = file.read(&mut buf).await?;
+                            if n == 0 {
+                                break;
+                            }
+                            hasher.update(&buf[0..n]);
+                        }
+                        let actual_hash = hasher.finish();
+                        if actual_hash != info.hash {
+                            warn!(
+                                "Delete corrupt cache file: path={:?}, hash={:x?}, actual={:x?}",
+                                &path, &info.hash, &actual_hash
+                            );
+                            if let Err(err) = tokio::fs::remove_file(&path).await {
+                                error!("Delete corrupt cache file error: path={:?}, err={}", &path, err);
+                            }
+                            continue;
+                        }
+                    }
+
+                    self.total_size.fetch_add(file_real_size_fast(entry.path(), &metadata)?, Relaxed);
+
+                    // Add recently accessed file to the cache.
+                    let mtime = FileTime::from_last_modification_time(&metadata);
+                    if mtime > lru_cutoff {
+                        self.mark_recently_accessed(&info, false).await;
+                    }
+                    if mtime < time {
+                        time = mtime;
+                    }
                 }
 
-                self.total_size.fetch_add(file_real_size_fast(entry.path(), &metadata)?, Relaxed);
-
-                // Add recently accessed file to the cache.
-                let mtime = FileTime::from_last_modification_time(&metadata);
-                if mtime > lru_cutoff {
-                    self.mark_recently_accessed(&info, false).await;
+                let count = counter.fetch_add(1, Relaxed) + 1;
+                if count % 100 == 0 || count == total {
+                    info!("Scanned {}/{} static ranges.", count, total);
                 }
-                if mtime < time {
-                    time = mtime;
-                }
-            }
 
-            Ok::<(PathBuf, FileTime), Error>((dir, time))
-        }))
-        .buffer_unordered(parallelism)
-        .collect::<Vec<_>>()
-        .await;
-
-        debug!("Cache size: {}", self.total_size.load(Relaxed));
+                Ok::<(PathBuf, FileTime), Error>((dir, time))
+            })
+            .buffer_unordered(parallelism)
+            .collect::<Vec<_>>()
+            .await;
 
         // Save oldest mtime
         let mut map = self.cache_date.lock();
@@ -325,6 +331,8 @@ impl CacheManager {
                 Err(err) => error!("Scan cache dir error: {}", err),
             }
         }
+
+        info!("Finished cache scan. Cache size: {}", self.total_size.load(Relaxed));
 
         Ok(())
     }
@@ -340,8 +348,12 @@ impl CacheManager {
 
     async fn check_cache_usage(&self) {
         let mut need_free = self.total_size.load(Relaxed).saturating_sub(self.settings.size_limit());
+        if need_free == 0 {
+            return;
+        }
+
+        debug!("Start cache cleaner: need_free={}", need_free);
         while need_free > 0 {
-            debug!("Start cache cleaner");
             let map = self.cache_date.lock().clone();
             let mut dirs = map.iter().collect::<Vec<_>>();
             dirs.sort_by(|(_, a), (_, b)| a.cmp(b));
@@ -362,7 +374,7 @@ impl CacheManager {
                     }
                     let entry = entry.unwrap();
 
-                    let metadata = metadata(entry.path()).await;
+                    let metadata = entry.metadata().await;
                     if let Err(err) = metadata {
                         error!("Read cache file metadata error: {}", err);
                         return None;
@@ -402,7 +414,6 @@ impl CacheManager {
                 }
                 let size = size.unwrap();
 
-                debug!("Delete old cache file: {:?}", &path);
                 self.remove_cache(&info.unwrap()).await;
 
                 need_free = need_free.saturating_sub(size);
