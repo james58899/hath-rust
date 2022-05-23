@@ -21,6 +21,7 @@ use actix_web::{
 };
 use futures::TryFutureExt;
 use log::{error, info};
+use mimalloc::MiMalloc;
 use openssl::{
     asn1::Asn1Time,
     pkcs12::ParsedPkcs12,
@@ -51,12 +52,8 @@ mod route;
 mod rpc;
 mod util;
 
-#[cfg(not(target_env = "msvc"))]
-use tikv_jemallocator::Jemalloc;
-
-#[cfg(not(target_env = "msvc"))]
 #[global_allocator]
-static GLOBAL: Jemalloc = Jemalloc;
+static GLOBAL: MiMalloc = MiMalloc;
 
 static CLIENT_VERSION: &str = "1.6.1";
 static MAX_KEY_TIME_DRIFT: RangeInclusive<i64> = -300..=300;
