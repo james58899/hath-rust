@@ -3,10 +3,7 @@ use std::{
     net::{Ipv4Addr, SocketAddrV4},
     ops::RangeInclusive,
     path::Path,
-    sync::{
-        atomic::{AtomicU64, Ordering::Relaxed},
-        Arc,
-    },
+    sync::Arc,
     time::Duration,
 };
 
@@ -14,7 +11,7 @@ use actix_tls::accept::openssl::TlsStream;
 use actix_web::{
     dev::Service,
     http::{header, ConnectionType},
-    middleware::{DefaultHeaders, Logger},
+    middleware::DefaultHeaders,
     rt::net::TcpStream,
     web::{to, Data},
     App, HttpServer,
@@ -48,6 +45,7 @@ use crate::{
 mod cache_manager;
 mod error;
 mod logger;
+mod middleware;
 mod route;
 mod rpc;
 mod util;
@@ -239,6 +237,7 @@ async fn read_credential(data_path: &str) -> Option<(i32, String)> {
 
 fn create_server(port: u16, cert: ParsedPkcs12, data: AppState) -> (actix_web::dev::Server, watch::Sender<ParsedPkcs12>) {
     let app_data = Data::new(data);
+    let logger = middleware::Logger::default();
     let (tx, mut rx) = watch::channel(cert);
     let ssl_context = Arc::new(RwLock::new(create_ssl_acceptor(&rx.borrow_and_update()).build()));
     let ssl_context_write = ssl_context.clone();
@@ -260,7 +259,7 @@ fn create_server(port: u16, cert: ParsedPkcs12, data: AppState) -> (actix_web::d
         HttpServer::new(move || {
             App::new()
                 .app_data(app_data.clone())
-                .wrap(logger_format())
+                .wrap(logger.clone())
                 .wrap(DefaultHeaders::new().add((
                     header::SERVER,
                     format!("Genetic Lifeform and Distributed Open Server {}", CLIENT_VERSION),
@@ -320,18 +319,6 @@ fn create_ssl_acceptor(cert: &ParsedPkcs12) -> SslAcceptorBuilder {
         i.iter().rev().for_each(|j| builder.add_extra_chain_cert(j.to_owned()).unwrap());
     }
     builder
-}
-
-// TODO custom impl logger
-fn logger_format() -> Logger {
-    static REQUEST_COUNTER: AtomicU64 = AtomicU64::new(1);
-    Logger::new("%{CONNECTION}xi Code=%s Bytes=%b %r").custom_request_replace("CONNECTION", |req| {
-        format!(
-            "{{{}/{:16}",
-            REQUEST_COUNTER.fetch_add(1, Relaxed),
-            format!("{}}}", &req.connection_info().peer_addr().unwrap_or("-"))
-        )
-    })
 }
 
 async fn wait_shutdown_signal(mut shutdown_channel: UnboundedReceiver<()>) {

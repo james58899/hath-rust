@@ -799,6 +799,7 @@ dependencies = [
  "openssl",
  "openssl-src",
  "parking_lot",
+ "pin-project-lite",
  "rand",
  "reqwest",
  "tempfile",
