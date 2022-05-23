@@ -19,7 +19,7 @@ pub fn create_http_client() -> reqwest::Client {
 
     reqwest::ClientBuilder::new()
         .user_agent(format!("Hentai@Home {}", CLIENT_VERSION))
-        .tcp_keepalive(None)
+        .tcp_keepalive(Duration::from_secs(75)) // Linux default keepalive inverval
         .connect_timeout(Duration::from_secs(5))
         .timeout(Duration::from_secs(10))
         .default_headers(headers)
