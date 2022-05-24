@@ -11,10 +11,7 @@ use futures::{executor::block_on, TryFutureExt};
 use log::{debug, error, info, warn};
 use openssl::pkcs12::{ParsedPkcs12, Pkcs12};
 use parking_lot::{RwLock, RwLockUpgradableReadGuard};
-use rand::{
-    prelude::{SliceRandom, SmallRng},
-    SeedableRng,
-};
+use rand::prelude::SliceRandom;
 use reqwest::{IntoUrl, Url};
 
 use crate::{
@@ -400,16 +397,11 @@ The program will now terminate.
             servers.swap_remove(pos);
         }
 
-        // Shuffle servers
-        if servers.len() > 1 {
-            let mut rng = SmallRng::from_entropy();
-            servers.shuffle(&mut rng);
-        }
+        // Random servers
+        let server = servers.choose(&mut rand::thread_rng()).map_or(DEFAULT_SERVER, |s| s.as_str());
 
         // Update server
-        RwLockUpgradableReadGuard::upgrade(api_base)
-            .set_host(servers.pop().as_deref())
-            .unwrap();
+        RwLockUpgradableReadGuard::upgrade(api_base).set_host(Some(server)).unwrap();
     }
 }
 
