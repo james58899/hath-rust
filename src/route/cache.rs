@@ -13,7 +13,6 @@ use actix_web_lab::{
     header::{CacheControl, CacheDirective},
 };
 use async_stream::stream;
-use chrono::Utc;
 use futures::StreamExt;
 use log::error;
 use openssl::sha::Sha1;
@@ -30,7 +29,7 @@ use crate::{
     AppState,
 };
 
-static TTL: RangeInclusive<i64> = -900..=900; // allow
+static TTL: RangeInclusive<i64> = -900..=900; // Token TTL 15 minutes
 
 #[route("/h/{fileid}/{additional}/{filename:.*}", method = "GET", method = "HEAD")]
 async fn hath(
@@ -47,7 +46,7 @@ async fn hath(
     // keystamp check
     let time = keystamp.get(0).unwrap_or(&"");
     let hash = keystamp.get(1).unwrap_or(&"");
-    let time_diff = &(Utc::now().timestamp() - time.parse::<i64>().unwrap_or_default());
+    let time_diff = &(data.rpc.get_timestemp() - time.parse::<i64>().unwrap_or_default());
     let hash_string = format!("{}-{}-{}-hotlinkthis", time, file_id, data.key);
     if time.is_empty() || hash.is_empty() || !TTL.contains(time_diff) || !string_to_hash(hash_string).starts_with(hash) {
         return forbidden();

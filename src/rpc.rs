@@ -137,6 +137,13 @@ impl RPCClient {
         &self.settings
     }
 
+    pub fn get_timestemp(&self) -> i64 {
+        Utc::now()
+            .checked_add_signed(chrono::Duration::seconds(self.clock_offset.load(Ordering::Relaxed)))
+            .unwrap_or_else(Utc::now)
+            .timestamp()
+    }
+
     pub async fn connect_check(&self) -> Option<()> {
         if let Ok(res) = self.send_action("client_start", None).await {
             if res.is_ok() {
@@ -259,13 +266,9 @@ The program will now terminate.
                 .and_then(|time| Utc.timestamp_opt(time, 0).single())
                 .and_then(|time| time.checked_add_signed(request_time / 4)); // connecting 1 RTT + request 1 RTT
             if let Some(time) = server_time {
-                let offset = Utc::now().signed_duration_since(time);
-                self.clock_offset.store(offset.num_seconds(), Ordering::Relaxed);
-                debug!(
-                    "Server clock offset: {}ms±{}ms",
-                    offset.num_milliseconds(),
-                    request_time.num_milliseconds()
-                );
+                let offset = Utc::now().signed_duration_since(time).num_milliseconds();
+                self.clock_offset.store((offset as f64 / 1000f64).round() as i64, Ordering::Relaxed);
+                debug!("Server clock offset: {}ms±{}ms", offset, request_time.num_milliseconds());
             }
 
             let min_version = data.get("min_client_build").and_then(|s| s.parse().ok());
@@ -323,11 +326,7 @@ The program will now terminate.
 
     fn build_url(&self, action: &str, additional: &str, endpoint: Option<&str>) -> Url {
         let mut url = self.api_base.read().clone();
-        let timestamp = &Utc::now()
-            .checked_add_signed(chrono::Duration::seconds(self.clock_offset.load(Ordering::Relaxed)))
-            .unwrap_or_else(Utc::now)
-            .timestamp()
-            .to_string();
+        let timestamp = &self.get_timestemp().to_string();
         let hash = string_to_hash(format!(
             "hentai@home-{}-{}-{}-{}-{}",
             action, additional, self.id, timestamp, self.key

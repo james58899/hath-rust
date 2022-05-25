@@ -8,7 +8,6 @@ use actix_web::{
 };
 use actix_web_lab::extract::Path;
 use async_stream::stream;
-use chrono::Utc;
 use rand::{prelude::SmallRng, RngCore, SeedableRng};
 
 use crate::{route::forbidden, util::string_to_hash, AppState, MAX_KEY_TIME_DRIFT};
@@ -18,7 +17,7 @@ use crate::{route::forbidden, util::string_to_hash, AppState, MAX_KEY_TIME_DRIFT
 async fn speedtest(Path((size, time, hash)): Path<(u64, i64, String)>, data: Data<AppState>) -> impl Responder {
     // Check time & hash
     let hash_string = format!("hentai@home-speedtest-{}-{}-{}-{}", size, time, data.id, data.key);
-    if !MAX_KEY_TIME_DRIFT.contains(&(Utc::now().timestamp() - time)) || string_to_hash(hash_string) != hash {
+    if !MAX_KEY_TIME_DRIFT.contains(&(data.rpc.get_timestemp() - time)) || string_to_hash(hash_string) != hash {
         return forbidden();
     }
 
