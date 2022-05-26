@@ -316,7 +316,7 @@ The program will now terminate.
         match self.reqwest.get(url).timeout(Duration::from_secs(600)).send().await {
             Ok(res) => Ok(res.text().await?),
             Err(err) => {
-                if err.is_connect() || err.is_timeout() || err.is_status() {
+                if err.is_connect() || err.is_timeout() || err.status().map_or(false, |s| s.is_server_error()) {
                     self.change_server();
                 }
                 Err(err)
