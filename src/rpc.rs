@@ -248,6 +248,19 @@ The program will now terminate.
         None
     }
 
+    pub async fn dl_fetch(&self, gid: i32, page: usize, fileindex: usize, xres: String, force_image_server: bool) -> Option<Vec<String>> {
+        if let Ok(res) = self.send_action("dlfetch", Some(&format!("{};{};{};{};{}", gid, page, fileindex, xres, if force_image_server { 1 } else { 0 }))).await {
+            if res.is_ok() {
+                return Some(res.data)
+            }
+            else {
+                panic!("Failed to request gallery file url for fileindex={}", fileindex);
+            }
+        }
+
+        None
+    }
+
     pub async fn shutdown(&self) {
         if self.running.swap(false, Ordering::Relaxed) {
             let _ = self.send_action("client_stop", None).await;
