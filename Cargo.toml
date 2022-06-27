@@ -13,9 +13,11 @@ async-stream = "0.3"
 chrono = "0.4"
 clap = { version = "3.1.5", features = ["derive"] }
 cpufeatures = "0.2"
+filesize = "0.2"
 futures = "0.3"
 hex = "0.4"
 log = "0.4"
+mimalloc = { version = "0.1", default-features = false }
 mime = "0.3"
 openssl = { version = "0.10", features = ["vendored"] }
 openssl-src = { version = "*", features = ["weak-crypto"] }
@@ -26,8 +28,6 @@ reqwest = { version = "0.11", default-features = false, features = ["rustls-tls"
 tempfile = "3.3"
 tokio = { version = "1", features = ["full", "parking_lot"] }
 tokio-stream = { version = "0.1", default-features = false, features = ["fs"] }
-filesize = "0.2"
-mimalloc = { version = "0.1", default-features = false }
 
 [patch.crates-io]
 openssl = { git = "https://github.com/sfackler/rust-openssl" }
