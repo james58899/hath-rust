@@ -253,27 +253,40 @@ impl CacheManager {
                 let mut time = FileTime::now();
                 let mut stream = read_dir(&dir).map_ok(ReadDirStream::new).await?;
                 while let Some(entry) = stream.next().await.transpose()? {
-                    let metadata = metadata(entry.path()).await;
+                    let path = entry.path();
+                    let metadata = metadata(&path).await;
                     if let Err(err) = metadata {
-                        error!("Read cache file metadata error: path={:?}, err={}", &entry.path(), err);
+                        error!("Read cache file metadata error: path={:?}, err={}", path, err);
                         continue;
                     }
                     let metadata = metadata.unwrap();
                     if metadata.is_dir() {
-                        warn!("Found unexpected dir in cache dir: {}", &entry.path().to_str().unwrap_or_default());
+                        warn!("Found unexpected dir in cache dir: {:?}", path);
                         continue;
                     }
 
                     // Parse info
                     let info = entry.file_name().to_str().and_then(CacheFileInfo::from_file_id);
                     if info.is_none() {
-                        warn!("Invalid cache file: {:?}", entry.path());
+                        warn!("Invalid cache file: {:?}", path);
                         continue;
                     }
                     let info = info.unwrap();
 
+                    let size = metadata.len();
+                    if size != info.size() as u64 {
+                        warn!(
+                            "Delete corrupt cache file: path={:?}, size={:x?}, actual={:x?}",
+                            &path, &info.size(), size
+                        );
+
+                        if let Err(err) = tokio::fs::remove_file(&path).await {
+                            error!("Delete corrupt cache file error: path={:?}, err={}", &path, err);
+                        }
+                        continue;
+                    }
+
                     if self.settings.verify_cache() {
-                        let path = entry.path();
                         let mut hasher = Sha1::new();
                         let mut file = tokio::fs::File::open(&path).await?;
                         let mut buf = vec![0; 1024 * 1024]; // 1MiB
@@ -288,16 +301,16 @@ impl CacheManager {
                         if actual_hash != info.hash {
                             warn!(
                                 "Delete corrupt cache file: path={:?}, hash={:x?}, actual={:x?}",
-                                &path, &info.hash, &actual_hash
+                                path, &info.hash, &actual_hash
                             );
                             if let Err(err) = tokio::fs::remove_file(&path).await {
-                                error!("Delete corrupt cache file error: path={:?}, err={}", &path, err);
+                                error!("Delete corrupt cache file error: path={:?}, err={}", path, err);
                             }
                             continue;
                         }
                     }
 
-                    self.total_size.fetch_add(file_real_size_fast(entry.path(), &metadata)?, Relaxed);
+                    self.total_size.fetch_add(file_real_size_fast(&path, &metadata)?, Relaxed);
 
                     // Add recently accessed file to the cache.
                     let mtime = FileTime::from_last_modification_time(&metadata);
