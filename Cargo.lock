@@ -222,9 +222,9 @@ dependencies = [
 
 [[package]]
 name = "actix-web-lab"
-version = "0.16.1"
+version = "0.16.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "483a1012828ff6bca5b67e5a97099dd99ef699fbd911d39e7bcdc3b40e48aaa4"
+checksum = "8cf633bf3ced3b374e3c990a9b5d7b09148852178d8be9bbef3706c80b28e151"
 dependencies = [
  "actix-files",
  "actix-http",
@@ -244,10 +244,12 @@ dependencies = [
  "futures-util",
  "generic-array",
  "hmac",
+ "http",
  "local-channel",
  "mime",
  "once_cell",
  "pin-project-lite",
+ "regex",
  "serde",
  "serde_html_form",
  "serde_json",
