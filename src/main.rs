@@ -28,12 +28,13 @@ use parking_lot::RwLock;
 use tokio::{
     fs::File,
     io::{AsyncBufReadExt, BufReader},
+    runtime::Handle,
     signal::{self, unix::SignalKind},
     sync::{
         mpsc::{self, Sender, UnboundedReceiver},
         watch,
     },
-    time::{sleep_until, Instant}, runtime::Handle,
+    time::{sleep_until, Instant},
 };
 
 use crate::{
@@ -94,20 +95,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let client = Arc::new(RPCClient::new(id, &key));
     client.login().await?;
 
-    // TODO cache clean
+    let (shutdown_send, shutdown_recv) = mpsc::unbounded_channel::<()>();
     let settings = client.settings();
-    let cache_manager = Arc::new(
-        CacheManager::new(
-            cache_dir,
-            temp_dir,
-            settings.size_limit(),
-            settings.static_range(),
-            settings.verify_cache(),
-        )
-        .await?,
-    );
-
-    let (_shutdown_send, shutdown_recv) = mpsc::unbounded_channel::<()>();
+    let cache_manager = CacheManager::new(Handle::current(), cache_dir, temp_dir, settings.clone(), shutdown_send.clone()).await?;
 
     // command channel
     let (tx, mut rx) = mpsc::channel::<COMMAND>(1);

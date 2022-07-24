@@ -53,15 +53,14 @@ async fn hath(
     };
 
     if let Some(info) = CacheFileInfo::from_file_id(&file_id) {
-        if let Some(file) = info
-            .get_file(data.cache_manager.cache_dir())
+        if let Some(file) = data.cache_manager
+            .get_file(&info)
+            .await
             .and_then(|f| NamedFile::from_file(f, &file_name).ok())
         {
             let cache_header = CacheControl(vec![CacheDirective::Public, CacheDirective::MaxAge(31536000)])
                 .try_into_pair()
                 .unwrap();
-            data.cache_manager.mark_recently_accessed(&info).await;
-
             let mut res = file
                 .use_etag(false)
                 .disable_content_disposition()
@@ -75,14 +74,8 @@ async fn hath(
                 return HttpResponse::NotFound().body("An error has occurred. (404)");
             }
 
-            let temp_path = Arc::new(
-                tempfile::Builder::new()
-                    .prefix("proxyfile_")
-                    .tempfile_in(data.cache_manager.temp_dir())
-                    .unwrap()
-                    .into_temp_path(),
-            );
-            let file_size = info.size();
+            let temp_path = Arc::new(data.cache_manager.create_temp_file());
+            let file_size = info.size() as u64;
             let (tx, mut rx) = watch::channel(0); // Download progress
 
             // Download worker
@@ -147,11 +140,11 @@ async fn hath(
                                     break 'source;
                                 }
                                 tx.closed().await;
-                                let hash = hex::encode(hasher.finish());
+                                let hash = hasher.finish();
                                 if hash == into2.hash() {
-                                    data.cache_manager.import_cache(&into2, temp_path2.as_ref()).await;
+                                    data.cache_manager.import_cache(&into2, &temp_path2).await;
                                 } else {
-                                    error!("Cache hash mismatch: expected: {}, got: {}", into2.hash(), hash);
+                                    error!("Cache hash mismatch: expected: {:x?}, got: {:x?}", into2.hash(), hash);
                                 }
                                 break 'source;
                             }
