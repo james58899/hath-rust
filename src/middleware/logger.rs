@@ -73,6 +73,7 @@ where
     type Future = LocalBoxFuture<'static, Result<Self::Response, Self::Error>>;
 
     fn call(&self, req: ServiceRequest) -> Self::Future {
+        let start = Instant::now();
         let count = self.counter.fetch_add(1, Ordering::Relaxed) + 1;
         let ip = req.connection_info().peer_addr().unwrap_or("-").to_string();
         let is_head = req.method() == Method::HEAD;
@@ -101,7 +102,8 @@ where
                 ip,
                 code,
                 size,
-                start: Instant::now(),
+                start,
+                body_start: Instant::now(),
             }))
         })
     }
@@ -118,18 +120,18 @@ pin_project! {
         code: u16,
         size: u64,
         start: std::time::Instant,
+        body_start: std::time::Instant,
     }
 
     impl<B> PinnedDrop for LoggerFinalizer<B> {
         fn drop(this: Pin<&mut Self>) {
-            let time = max(this.start.elapsed().as_millis(), 1);
             info!("{{{}/{:16} Code={} Byte={:<8} Finished processing request in {}ms ({:.2} KB/s)",
                 this.count,
                 this.ip.clone() + "}",
                 this.code,
                 this.size,
-                time,
-                this.size as f64 / time as f64
+                this.start.elapsed().as_millis(),
+                this.size as f64 / max(this.body_start.elapsed().as_millis(), 1) as f64
             )
         }
     }
