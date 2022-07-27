@@ -53,7 +53,8 @@ async fn hath(
     };
 
     if let Some(info) = CacheFileInfo::from_file_id(&file_id) {
-        if let Some(file) = data.cache_manager
+        if let Some(file) = data
+            .cache_manager
             .get_file(&info)
             .await
             .and_then(|f| NamedFile::from_file(f, &file_name).ok())
@@ -101,14 +102,8 @@ async fn hath(
                         };
 
                         let mut download = 0;
-                        if let Ok(mut stream) = data
-                            .reqwest
-                            .get(&source)
-                            .timeout(Duration::from_secs(300))
-                            .send()
-                            .await
-                            .map(|r| r.bytes_stream())
-                        {
+                        let request = data.reqwest.get(&source).timeout(Duration::from_secs(300));
+                        if let Ok(mut stream) = request.send().await.map(|r| r.bytes_stream()) {
                             while let Some(bytes) = stream.next().await {
                                 let bytes = match &bytes {
                                     Ok(it) => it,
