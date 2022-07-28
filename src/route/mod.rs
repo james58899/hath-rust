@@ -38,7 +38,9 @@ async fn robots() -> impl Responder {
 }
 
 fn forbidden() -> HttpResponse {
-    HttpResponse::Forbidden().body("An error has occurred. (403)")
+    HttpResponse::Forbidden()
+        .content_type(ContentType::html())
+        .body("An error has occurred. (403)")
 }
 
 fn parse_additional(additional: &str) -> HashMap<String, String> {

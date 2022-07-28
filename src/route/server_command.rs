@@ -2,8 +2,7 @@ use std::time::{Duration, Instant};
 
 use actix_web::{route, web::Data, HttpRequest, HttpResponse, Responder};
 use actix_web_lab::extract::Path;
-use chrono::Utc;
-use futures::StreamExt;
+use futures::TryStreamExt;
 use log::debug;
 use rand::{prelude::SmallRng, Rng, SeedableRng};
 use reqwest::Url;
@@ -33,7 +32,7 @@ async fn servercmd(
 
     // Hash check
     let hash_string = format!("hentai@home-servercmd-{}-{}-{}-{}-{}", command, additional, data.id, time, data.key);
-    if !MAX_KEY_TIME_DRIFT.contains(&(Utc::now().timestamp() - time)) || string_to_hash(hash_string) != hash {
+    if !MAX_KEY_TIME_DRIFT.contains(&(data.rpc.get_timestemp() - time)) || string_to_hash(hash_string) != hash {
         debug!("{} Got a servercmd with expired or incorrect key", "<SESSION>");
         return forbidden();
     }
@@ -60,6 +59,9 @@ async fn servercmd(
                 return HttpResponse::BadRequest().finish();
             }
 
+            // Switch to MT tokio runtime
+            let runtime = data.runtime.enter();
+
             let mut rand = SmallRng::from_entropy();
             let mut requests = Vec::new();
             for _ in 1..=count {
@@ -76,7 +78,7 @@ async fn servercmd(
                     )
                     .as_str(),
                 )
-                .unwrap(); // TODO error handel
+                .unwrap();
                 debug!("Test thread: {}", url);
                 let reqwest = data.reqwest.clone();
                 requests.push(tokio::spawn(async move {
@@ -86,28 +88,25 @@ async fn servercmd(
                                 let start = Instant::now();
 
                                 // Read & count response size
-                                let response_size = res
-                                    .bytes_stream()
-                                    .fold(0, |size, r| async move { size + r.map_or(0, |b| b.len()) })
-                                    .await;
+                                let response_size = res.bytes_stream().try_fold(0, |size, b| async move { Ok(size + b.len()) }).await;
 
                                 // Check response size as excepted
-                                if response_size == size as usize {
+                                if response_size.is_ok() && response_size.unwrap() == size as usize {
                                     return Some(start.elapsed());
-                                } else {
-                                    return None;
                                 }
                             }
                             Err(err) => {
                                 debug!("Connection error: {}", err);
-                                debug!("Retrying.. ({} tries left)", 3 - retry);
-                                continue;
                             }
                         }
+                        debug!("Retrying.. ({} tries left)", 3 - retry);
                     }
+                    debug!("Exhaused retries or aborted getting {}", url);
                     None
                 }));
             }
+
+            drop(runtime);
 
             let mut success = 0;
             let mut total_time = Duration::new(0, 0);

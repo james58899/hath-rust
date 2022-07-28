@@ -2,8 +2,12 @@ use std::{
     collections::HashMap,
     net::IpAddr,
     str::FromStr,
-    sync::atomic::{AtomicBool, AtomicI64, AtomicU16, AtomicU64, Ordering},
+    sync::{
+        atomic::{AtomicBool, AtomicI64, AtomicU16, AtomicU64, Ordering},
+        Arc,
+    },
     time::{Duration, Instant},
+    vec,
 };
 
 use chrono::{TimeZone, Utc};
@@ -11,10 +15,7 @@ use futures::{executor::block_on, TryFutureExt};
 use log::{debug, error, info, warn};
 use openssl::pkcs12::{ParsedPkcs12, Pkcs12};
 use parking_lot::{RwLock, RwLockUpgradableReadGuard};
-use rand::{
-    prelude::{SliceRandom, SmallRng},
-    SeedableRng,
-};
+use rand::prelude::SliceRandom;
 use reqwest::{IntoUrl, Url};
 
 use crate::{
@@ -33,7 +34,7 @@ pub struct RPCClient {
     reqwest: reqwest::Client,
     rpc_servers: RwLock<Vec<String>>,
     running: AtomicBool,
-    settings: Settings,
+    settings: Arc<Settings>,
 }
 
 pub struct Settings {
@@ -64,6 +65,27 @@ impl Settings {
     pub fn verify_cache(&self) -> bool {
         self.verify_cache.load(Ordering::Relaxed)
     }
+
+    fn update(&self, settings: HashMap<String, String>) {
+        // Update Host & Port
+        if let Some(host) = settings.get("host") {
+            *self.client_host.write() = host.to_owned();
+        }
+        if let Some(port) = settings.get("port").and_then(|s| s.parse().ok()) {
+            self.client_port.store(port, Ordering::Relaxed);
+        }
+        if let Some(size) = settings.get("disklimit_bytes").and_then(|s| s.parse().ok()) {
+            self.size_limit.store(size, Ordering::Relaxed);
+        }
+        if let Some(static_range) = settings.get("static_ranges").map(|s| s.split(';').map(|s| s.to_string()).collect()) {
+            *self.static_range.write() = static_range;
+        }
+        if let Some(verify_cache) = settings.get("verify_cache").map(|s| s == "true") {
+            self.verify_cache.store(verify_cache, Ordering::Relaxed);
+        }
+
+        // TODO update other settings
+    }
 }
 
 impl RPCClient {
@@ -76,13 +98,13 @@ impl RPCClient {
             reqwest: create_http_client(),
             rpc_servers: RwLock::new(vec![]),
             running: AtomicBool::new(false),
-            settings: Settings {
+            settings: Arc::new(Settings {
                 client_port: AtomicU16::new(0),
                 client_host: RwLock::new(String::new()),
                 size_limit: AtomicU64::new(u64::MAX),
                 static_range: RwLock::new(vec![]),
                 verify_cache: AtomicBool::new(false),
-            },
+            }),
         }
     }
 
@@ -136,8 +158,15 @@ impl RPCClient {
     }
 
     /// Get a reference to the rpcclient's settings.
-    pub fn settings(&self) -> &Settings {
-        &self.settings
+    pub fn settings(&self) -> Arc<Settings> {
+        self.settings.clone()
+    }
+
+    pub fn get_timestemp(&self) -> i64 {
+        Utc::now()
+            .checked_add_signed(chrono::Duration::seconds(self.clock_offset.load(Ordering::Relaxed)))
+            .unwrap_or_else(Utc::now)
+            .timestamp()
     }
 
     pub async fn connect_check(&self) -> Option<()> {
@@ -304,13 +333,9 @@ The program will now terminate.
                 .and_then(|time| Utc.timestamp_opt(time, 0).single())
                 .and_then(|time| time.checked_add_signed(request_time / 4)); // connecting 1 RTT + request 1 RTT
             if let Some(time) = server_time {
-                let offset = Utc::now().signed_duration_since(time);
-                self.clock_offset.store(offset.num_seconds(), Ordering::Relaxed);
-                debug!(
-                    "Server clock offset: {}ms±{}ms",
-                    offset.num_milliseconds(),
-                    request_time.num_milliseconds()
-                );
+                let offset = Utc::now().signed_duration_since(time).num_milliseconds();
+                self.clock_offset.store((offset as f64 / 1000f64).round() as i64, Ordering::Relaxed);
+                debug!("Server clock offset: {}ms±{}ms", offset, request_time.num_milliseconds());
             }
 
             let min_version = data.get("min_client_build").and_then(|s| s.parse().ok());
@@ -355,10 +380,10 @@ The program will now terminate.
     }
 
     async fn send_request<U: IntoUrl>(&self, url: U) -> Result<String, reqwest::Error> {
-        match self.reqwest.get(url).send().await {
+        match self.reqwest.get(url).timeout(Duration::from_secs(600)).send().await {
             Ok(res) => Ok(res.text().await?),
             Err(err) => {
-                if err.is_connect() || err.is_timeout() || err.is_status() {
+                if err.is_connect() || err.is_timeout() || err.status().map_or(false, |s| s.is_server_error()) {
                     self.change_server();
                 }
                 Err(err)
@@ -368,11 +393,7 @@ The program will now terminate.
 
     fn build_url(&self, action: &str, additional: &str, endpoint: Option<&str>) -> Url {
         let mut url = self.api_base.read().clone();
-        let timestamp = &Utc::now()
-            .checked_add_signed(chrono::Duration::seconds(self.clock_offset.load(Ordering::Relaxed)))
-            .unwrap_or_else(Utc::now)
-            .timestamp()
-            .to_string();
+        let timestamp = &self.get_timestemp().to_string();
         let hash = string_to_hash(format!(
             "hentai@home-{}-{}-{}-{}-{}",
             action, additional, self.id, timestamp, self.key
@@ -410,20 +431,7 @@ The program will now terminate.
             self.change_server();
         }
         // Update Host & Port
-        if let Some(host) = settings.get("host") {
-            *self.settings.client_host.write() = host.to_owned();
-        }
-        if let Some(port) = settings.get("port").and_then(|s| s.parse().ok()) {
-            self.settings.client_port.store(port, Ordering::Relaxed);
-        }
-        if let Some(size) = settings.get("disklimit_bytes").and_then(|s| s.parse().ok()) {
-            self.settings.client_port.store(size, Ordering::Relaxed);
-        }
-        if let Some(static_range) = settings.get("static_ranges").map(|s| s.split(';').map(|s| s.to_string()).collect()) {
-            *self.settings.static_range.write() = static_range;
-        }
-
-        // TODO update other settings
+        self.settings.update(settings);
     }
 
     fn change_server(&self) {
@@ -442,16 +450,11 @@ The program will now terminate.
             servers.swap_remove(pos);
         }
 
-        // Shuffle servers
-        if servers.len() > 1 {
-            let mut rng = SmallRng::from_entropy();
-            servers.shuffle(&mut rng);
-        }
+        // Random servers
+        let server = servers.choose(&mut rand::thread_rng()).map_or(DEFAULT_SERVER, |s| s.as_str());
 
         // Update server
-        RwLockUpgradableReadGuard::upgrade(api_base)
-            .set_host(servers.pop().as_deref())
-            .unwrap();
+        RwLockUpgradableReadGuard::upgrade(api_base).set_host(Some(server)).unwrap();
     }
 }
 
