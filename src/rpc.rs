@@ -26,6 +26,8 @@ use crate::{
 const API_VERSION: i32 = 154; // For server check capabilities.
 const DEFAULT_SERVER: &str = "rpc.hentaiathome.net";
 
+type RequestError = Box<dyn std::error::Error + Send + Sync>;
+
 pub struct RPCClient {
     api_base: RwLock<Url>,
     clock_offset: AtomicI64,
@@ -312,41 +314,47 @@ The program will now terminate.
         }
     }
 
-    async fn send_action(&self, action: &str, additional: Option<&str>) -> Result<ApiResponse, reqwest::Error> {
+    async fn send_action(&self, action: &str, additional: Option<&str>) -> Result<ApiResponse, RequestError> {
         self.send_action1(action, additional, None).await
     }
 
-    async fn send_action1(&self, action: &str, additional: Option<&str>, endpoint: Option<&str>) -> Result<ApiResponse, reqwest::Error> {
+    async fn send_action1(&self, action: &str, additional: Option<&str>, endpoint: Option<&str>) -> Result<ApiResponse, RequestError> {
         let additional = additional.unwrap_or("");
-        let mut result = self.send_request(self.build_url(action, additional, endpoint)).await.map(|body| {
-            debug!("Received response: {}", body);
-            parse_response(&body)
-        });
-
-        if let Ok(response) = &result {
-            if response.is_key_expired() {
-                warn!("Server reported expired key; attempting to refresh time from server and retrying");
-                let _ = self.check_stat().await; // Sync clock
-                result = self.send_request(self.build_url(action, additional, endpoint)).await.map(|body| {
+        let mut error: RequestError = Box::new(Error::connection_error("Failed to connect to server."));
+        let mut retry = 3;
+        while retry > 0 {
+            match self.send_request(self.build_url(action, additional, endpoint)).await {
+                Ok(body) => {
                     debug!("Received response: {}", body);
-                    parse_response(&body)
-                })
+                    let response = parse_response(&body);
+                    if response.is_key_expired() {
+                        warn!("Server reported expired key; attempting to refresh time from server and retrying");
+                        let _ = self.check_stat().await; // Sync clock
+                        continue;
+                    }
+                    return Ok(response);
+                }
+                Err(err) => {
+                    if err.is_connect() || err.is_timeout() || err.status().map_or(false, |s| s.is_server_error()) {
+                        self.change_server();
+                    }
+                    error = Box::new(err);
+                }
             }
+            retry -= 1;
         }
 
-        result
+        Err(error)
     }
 
     async fn send_request<U: IntoUrl>(&self, url: U) -> Result<String, reqwest::Error> {
-        match self.reqwest.get(url).timeout(Duration::from_secs(600)).send().await {
-            Ok(res) => Ok(res.text().await?),
-            Err(err) => {
-                if err.is_connect() || err.is_timeout() || err.status().map_or(false, |s| s.is_server_error()) {
-                    self.change_server();
-                }
-                Err(err)
-            }
-        }
+        self.reqwest
+            .get(url)
+            .timeout(Duration::from_secs(600))
+            .send()
+            .map_ok(|res| res.text())
+            .try_flatten()
+            .await
     }
 
     fn build_url(&self, action: &str, additional: &str, endpoint: Option<&str>) -> Url {
