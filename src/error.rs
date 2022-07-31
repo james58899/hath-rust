@@ -6,6 +6,7 @@ pub enum Error {
     VersionTooOld,
     ApiResponseFail { fail_code: String, message: String },
     ConnectTestFail,
+    InitSettingsMissing(String),
 }
 
 impl Error {
@@ -26,6 +27,7 @@ impl fmt::Display for Error {
             Error::VersionTooOld => write!(f, "Your client is too old to connect to the Hentai@Home Network."),
             Error::ApiResponseFail { fail_code, message } => write!(f, "Code={}, Message={}", fail_code, message),
             Error::ConnectTestFail => write!(f, "Connect test failed"),
+            Error::InitSettingsMissing(settings) => write!(f, "Missing init settings: {}", settings),
         }
     }
 }

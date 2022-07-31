@@ -93,11 +93,19 @@ async fn main() -> Result<(), Box<dyn Error>> {
         None => todo!("Setup client"),
     };
     let client = Arc::new(RPCClient::new(id, &key));
-    client.login().await?;
+    let init_settings = client.login().await?;
 
     let (shutdown_send, shutdown_recv) = mpsc::unbounded_channel::<()>();
     let settings = client.settings();
-    let cache_manager = CacheManager::new(Handle::current(), cache_dir, temp_dir, settings.clone(), shutdown_send.clone()).await?;
+    let cache_manager = CacheManager::new(
+        Handle::current(),
+        cache_dir,
+        temp_dir,
+        settings.clone(),
+        &init_settings,
+        shutdown_send.clone(),
+    )
+    .await?;
 
     // command channel
     let (tx, mut rx) = mpsc::channel::<COMMAND>(1);
@@ -110,7 +118,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     }
 
     let (server, cert_changer) = create_server(
-        client.settings().client_port(),
+        init_settings.client_port(),
         cert,
         AppState {
             runtime: Handle::current(),
@@ -129,7 +137,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     tokio::spawn(server);
 
     info!("Notifying the server that we have finished starting up the client...");
-    if client.connect_check().await.is_none() {
+    if client.connect_check(init_settings).await.is_none() {
         error!("Startup notification failed.");
         return Err(error::Error::ConnectTestFail.into());
     }

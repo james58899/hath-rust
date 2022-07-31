@@ -30,7 +30,7 @@ use tokio::{
 };
 use tokio_stream::wrappers::ReadDirStream;
 
-use crate::rpc::Settings;
+use crate::rpc::{InitSettings, Settings};
 
 const LRU_SIZE: usize = 1048576;
 
@@ -51,6 +51,7 @@ impl CacheManager {
         cache_dir: P,
         temp_dir: P,
         settings: Arc<Settings>,
+        init_settings: &InitSettings,
         shutdown: UnboundedSender<()>,
     ) -> Result<Arc<Self>, Error> {
         let new = Arc::new(Self {
@@ -65,16 +66,18 @@ impl CacheManager {
         });
 
         let manager = new.clone();
-        if new.settings.verify_cache() {
+        let verify_cache = init_settings.verify_cache();
+        let static_range = init_settings.static_range();
+        if verify_cache {
             // Force check cache
             info!("Start force cache check");
-            new.scan_cache(16).await?;
+            new.scan_cache(static_range, 16, verify_cache).await?;
             CacheManager::start_background_task(manager);
         } else {
             // Background cache scan
             info!("Start background cache scan");
             new.runtime.spawn(async move {
-                if let Err(err) = manager.scan_cache(1).await {
+                if let Err(err) = manager.scan_cache(static_range, 1, verify_cache).await {
                     error!("Cache scan error: {}", err);
                     let _ = shutdown.send(());
                 }
@@ -210,8 +213,7 @@ impl CacheManager {
         }
     }
 
-    async fn scan_cache(&self, parallelism: usize) -> Result<(), Error> {
-        let static_range = self.settings.static_range();
+    async fn scan_cache(&self, static_range: Vec<String>, parallelism: usize, verify_cache: bool) -> Result<(), Error> {
         let mut dirs = Vec::with_capacity(static_range.len());
 
         let mut root = read_dir(&self.cache_dir).map_ok(ReadDirStream::new).await?;
@@ -277,7 +279,9 @@ impl CacheManager {
                     if size != info.size() as u64 {
                         warn!(
                             "Delete corrupt cache file: path={:?}, size={:x?}, actual={:x?}",
-                            &path, &info.size(), size
+                            &path,
+                            &info.size(),
+                            size
                         );
 
                         if let Err(err) = tokio::fs::remove_file(&path).await {
@@ -286,7 +290,7 @@ impl CacheManager {
                         continue;
                     }
 
-                    if self.settings.verify_cache() {
+                    if verify_cache {
                         let mut hasher = Sha1::new();
                         let mut file = tokio::fs::File::open(&path).await?;
                         let mut buf = vec![0; 1024 * 1024]; // 1MiB
