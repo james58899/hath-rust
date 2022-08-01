@@ -34,7 +34,7 @@ use tokio::{
         mpsc::{self, Sender, UnboundedReceiver},
         watch,
     },
-    time::{sleep_until, Instant},
+    time::{sleep_until, Instant, sleep},
 };
 
 use crate::{
@@ -209,6 +209,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     keepalive.abort();
     client.shutdown().await;
     info!("Shutdown in progress - please wait");
+    sleep(Duration::from_secs(5)).await;
     server_handle.stop(true).await;
     Ok(())
 }
