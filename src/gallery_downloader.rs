@@ -112,7 +112,7 @@ impl GalleryDownloader {
             }
         }
 
-        GalleryMeta::new(
+        GalleryMeta{
             gid,
             filecount,
             minxres,
@@ -120,8 +120,8 @@ impl GalleryDownloader {
             title,
             information,
             gallery_files,
-            todo!(), // TODO
-        )
+            failures: vec![],
+        }
     }
 
     async fn download(&self, gallery: GalleryMeta, path: &Path) -> Result<(), Box<dyn Error>> {
@@ -185,7 +185,7 @@ impl GalleryFile {
     }
 }
 
-struct GalleryMeta {
+pub struct GalleryMeta {
     gid: i32,
     filecount: usize,
     minxres: String,
@@ -197,25 +197,11 @@ struct GalleryMeta {
 }
 
 impl GalleryMeta {
-    pub fn new(
-        gid: i32,
-        filecount: usize,
-        minxres: String,
-        xres_title: String,
-        title: String,
-        information: String,
-        gallery_files: Vec<GalleryFile>,
-        failures: Vec<String>,
-    ) -> GalleryMeta {
-        GalleryMeta { 
-            gid,
-            filecount,
-            minxres,
-            xres_title,
-            title,
-            information,
-            gallery_files,
-            failures,
-        }
+    pub fn gid(&self) -> i32 {
+        self.gid
+    }
+
+    pub fn minxres(&self) -> &str {
+        self.minxres.as_ref()
     }
 }

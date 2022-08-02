@@ -20,6 +20,7 @@ use reqwest::{IntoUrl, Url};
 
 use crate::{
     error::Error,
+    gallery_downloader::GalleryMeta,
     util::{create_http_client, string_to_hash},
 };
 
@@ -249,28 +250,40 @@ The program will now terminate.
     }
 
     pub async fn dl_fails(&self, failures: Vec<String>) {
-        if failures.is_empty() { return }
+        if failures.is_empty() {
+            return;
+        }
 
         let failcount = failures.len();
 
         if !(1..=50).contains(&failcount) {
             // if we're getting a lot of distinct failures, it's probably a problem with this client
-            return
+            return;
         }
 
-        let mut str = (failcount*30).to_string();
-        str += &failures.join(";");
+        let str = failures.join(";");
 
         let srv_res = self.send_action("dlfails", Some(&str)).await;
         // TODO report rpc server failure.
 
-        debug!("Reported {} download failures with response {}.", failcount, if srv_res.is_ok() {"OK"} else {"Fail"});
+        debug!(
+            "Reported {} download failures with response {}.",
+            failcount,
+            if srv_res.is_ok() { "OK" } else { "Fail" }
+        );
     }
 
-    pub async fn fetch_queue(&self) -> Option<Vec<String>> {
-        if let Ok(res) = self.send_action1("fetchqueue", None, Some("dl")).await {
+    pub async fn fetch_queue(&self, gallery: Option<GalleryMeta>) -> Option<Vec<String>> {
+        if let Ok(res) = self
+            .send_action1(
+                "fetchqueue",
+                gallery.map(|s| format!("{};{}", s.gid(), s.minxres())).as_deref(),
+                Some("dl"),
+            )
+            .await
+        {
             if res.is_ok() {
-                return Some(res.data)
+                return Some(res.data);
             }
         };
 
@@ -278,11 +291,23 @@ The program will now terminate.
     }
 
     pub async fn dl_fetch(&self, gid: i32, page: usize, fileindex: usize, xres: String, force_image_server: bool) -> Option<Vec<String>> {
-        if let Ok(res) = self.send_action("dlfetch", Some(&format!("{};{};{};{};{}", gid, page, fileindex, xres, if force_image_server { 1 } else { 0 }))).await {
+        if let Ok(res) = self
+            .send_action(
+                "dlfetch",
+                Some(&format!(
+                    "{};{};{};{};{}",
+                    gid,
+                    page,
+                    fileindex,
+                    xres,
+                    if force_image_server { 1 } else { 0 }
+                )),
+            )
+            .await
+        {
             if res.is_ok() {
-                return Some(res.data)
-            }
-            else {
+                return Some(res.data);
+            } else {
                 panic!("Failed to request gallery file url for fileindex={}", fileindex);
             }
         }
