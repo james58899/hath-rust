@@ -1,13 +1,8 @@
-use std::{path::Path, time::Duration, sync::Arc, error::Error};
+use std::{sync::Arc, error::Error, path::Path};
 
-use actix_web_lab::__reexports::futures_util;
 use log::{debug, error};
-use openssl::sha::Sha1;
 use regex::Regex;
-use reqwest::Client;
-use tokio::{fs::{self, OpenOptions}, io::{AsyncWriteExt, AsyncSeekExt}, sync::watch};
-use futures_util::StreamExt;
-use tokio::io::SeekFrom;
+use tokio::{fs::{self, OpenOptions}, io::AsyncWriteExt};
 
 use crate::{rpc::RPCClient, util};
 
@@ -125,8 +120,39 @@ impl GalleryDownloader {
             title,
             information,
             gallery_files,
-            vec![], // TODO
+            todo!(), // TODO
         )
+    }
+
+    async fn download(&self, gallery: GalleryMeta, path: &Path) -> Result<(), Box<dyn Error>> {
+        for page in gallery.gallery_files {
+            let picture = self.client.dl_fetch(
+                gallery.gid,
+                page.page,
+                page.fileindex,
+                page.xres,
+                false // TODO,
+            ).await.unwrap();
+
+            let todir = match gallery.title.len() {
+                len if len > 100 => format!("{}... [{}]", gallery.title.get(0..97).unwrap(), &gallery.gid.to_string()),
+                _ => format!("{} [{}]", gallery.title, &gallery.gid.to_string()),
+            };
+
+            let _path = path.join(todir);
+            if !_path.is_dir() { fs::create_dir_all(&_path).await.unwrap() } // Create Folder
+
+            let file = match OpenOptions::new()
+            .write(true)
+            .create(true)
+            .open(_path.join(format!("{}.{}", page.filename, page.filetype)))
+            .await {
+                Ok(mut f) => f.write_all(picture.join("\n").as_bytes()).await, // I don't know how. So placed here :)
+                Err(err) => panic!("{}\nFailed to create file {}.{}.", err, page.filename, page.filetype),
+            };
+        }
+        
+        Ok(())
     }
 }
 
@@ -156,92 +182,6 @@ impl GalleryFile {
             filetype,
             filename,
         }
-    }
-
-    pub async fn download(self, client: Arc<RPCClient>, reqwest: Client, gid: i32, dir_path: &str) -> Result<(), Box<dyn Error>> {
-        let sources = client.dl_fetch(gid, self.page, self.fileindex, self.xres, false).await.unwrap();
-        let file_path = format!("{}/{}", dir_path, self.filename);
-
-        tokio::spawn(async move {
-            let mut hasher = Sha1::new();
-            let mut progress = 0;
-            'source: for source in sources {
-                'retry: for _ in 0..3 {
-                    let mut file = match OpenOptions::new()
-                    .write(true)
-                    .create(true)
-                    .open(file_path.clone())
-                    .await {
-                        Ok(mut f) => {
-                            if let Err(err) = f.seek(SeekFrom::Start(progress)).await {
-                                error!("Proxy temp file seek fail: {}", err);
-                                continue 'retry;
-                            }
-                            f
-                        }
-                        Err(err) => {
-                            error!("Proxy temp file create fail: {}", err);
-                            continue 'retry;
-                        }
-                    };
-
-                    let (tx, mut rx) = watch::channel(0); // Download progress
-                    
-                    let mut download = 0;
-                    if let Ok(mut res) = reqwest.get(&source).send().await {
-                        let file_size = res.content_length().unwrap();
-                        let mut stream = res.bytes_stream();
-                        while let Some(bytes) = stream.next().await {
-                            let bytes = match &bytes {
-                                Ok(it) => it,
-                                Err(err) => {
-                                    error!("Proxy download fail: {}", err);
-                                    continue 'retry; // Try next source
-                                }
-                            };
-                            download += bytes.len() as u64;
-
-                            // Skip downloaded data
-                            if download <= progress {
-                                continue;
-                            }
-
-                            let write_size = download - progress;
-                            let data = &bytes[..write_size as usize];
-                            if let Err(err) = file.write_all(data).await {
-                                error!("Proxy temp file write fail: {}", err);
-                                continue 'retry;
-                            }
-
-                            hasher.update(data);
-                            progress += write_size;
-                            let _ = tx.send(progress); // Ignore error
-                        }
-
-                        if progress == file_size {
-                            if let Err(err) = file.flush().await {
-                                error!("Proxy temp file flush fail: {}", err);
-                                break 'source;
-                            }
-                            
-                            tx.closed().await;
-
-                            let hash = hex::encode(hasher.finish());
-                            if hash == self.expected_sha1_hash {
-                                debug!("File {} is expected.", &file_path)
-                            } // TODO
-                            else {
-                                println!("File {} not expected.", &file_path)
-                            }
-                            
-                            break 'source;
-                        }
-                    }
-                }
-            }
-        });
-
-        Ok(())
     }
 }
 
@@ -277,43 +217,5 @@ impl GalleryMeta {
             gallery_files,
             failures,
         }
-    }
-
-    pub async fn download(self, client: Arc<RPCClient>, reqwest: Client) -> Result<(), Box<dyn Error>> {
-        let download_dir = "download";
-        let download_path = Path::new(download_dir);
-
-        if Path::exists(download_path) && !Path::is_dir(download_path) {
-            fs::create_dir(download_dir).await?;
-        }
-
-        if self.title.len() > 100 {
-            fs::create_dir(
-                format!(
-                    "{}/{}... [{}]", 
-                    download_dir, 
-                    &self.title[..97],
-                    self.xres_title
-                )
-            ).await?;
-        }
-        else {
-            fs::create_dir(
-                format!(
-                    "{}/{} [{}{}]",
-                    download_dir,
-                    self.title,
-                    self.gid,
-                    self.xres_title
-                )
-            ).await?;
-        }
-
-        for file in self.gallery_files {
-            file.download(client.clone(), reqwest.clone(), self.gid, download_dir).await?;
-            tokio::time::sleep(Duration::from_secs(3)).await;
-        }
-
-        Ok(())
     }
 }
