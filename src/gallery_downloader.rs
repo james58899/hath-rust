@@ -89,7 +89,7 @@ impl GalleryDownloader {
                     // Get download URL and download file
                     match self
                         .client
-                        .dl_fetch(meta.gid, info.page, info.fileindex, &info.xres, retry % 2 == 0)
+                        .dl_fetch(meta.gid, info.page, info.fileindex, &info.xres, retry % 2 != 0)
                         .await
                         .and_then(|s| Url::parse(&s[0]).ok())
                     {
