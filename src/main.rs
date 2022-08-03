@@ -24,7 +24,7 @@ use openssl::{
     pkcs12::ParsedPkcs12,
     ssl::{ClientHelloResponse, SslAcceptor, SslAcceptorBuilder, SslMethod, SslOptions},
 };
-use parking_lot::RwLock;
+use parking_lot::{Mutex, RwLock};
 use tokio::{
     fs::File,
     io::{AsyncBufReadExt, BufReader},
@@ -39,6 +39,7 @@ use tokio::{
 
 use crate::{
     cache_manager::{CacheFileInfo, CacheManager},
+    gallery_downloader::GalleryDownloader,
     rpc::RPCClient,
     util::{create_dirs, create_http_client},
 };
@@ -72,6 +73,7 @@ struct AppState {
 enum COMMAND {
     ReloadCert,
     RefreshSettings,
+    StartDownloader,
 }
 
 #[tokio::main]
@@ -149,6 +151,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     // Command listener
     let client2 = client.clone();
+    let downloader = Arc::new(Mutex::new(None));
+    let downloader2 = downloader.clone();
     tokio::spawn(async move {
         while let Some(command) = rx.recv().await {
             match command {
@@ -161,6 +165,17 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 }
                 COMMAND::RefreshSettings => {
                     client2.refresh_settings().await;
+                }
+                COMMAND::StartDownloader => {
+                    let mut downloader = downloader2.lock();
+                    if downloader.is_none() {
+                        let new = GalleryDownloader::new(client2.clone(), download_dir);
+                        let downloader3 = downloader2.clone();
+                        *downloader = Some(tokio::spawn(async move {
+                            new.run().await;
+                            *downloader3.lock() = None;
+                        }))
+                    }
                 }
             }
         }
@@ -201,6 +216,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
     info!("Shutting down...");
     keepalive.abort();
     client.shutdown().await;
+    if let Some(job) = downloader.lock().as_ref() {
+        job.abort();
+    }
     info!("Shutdown in progress - please wait");
     server_handle.stop(true).await;
     Ok(())

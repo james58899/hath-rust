@@ -1,4 +1,7 @@
-use std::{sync::Arc, error::Error, path::Path};
+use std::{
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 
 use log::{debug, error};
 use regex::Regex;
@@ -6,16 +9,18 @@ use tokio::{fs::{self, OpenOptions}, io::AsyncWriteExt};
 
 use crate::{rpc::RPCClient, util};
 
-struct GalleryDownloader {
+pub struct GalleryDownloader {
     client: Arc<RPCClient>,
     reqwest: reqwest::Client,
+    download_dir: PathBuf,
 }
 
 impl GalleryDownloader {
-    pub fn new(client: Arc<RPCClient>) -> GalleryDownloader {
+    pub fn new<P: AsRef<Path>>(client: Arc<RPCClient>, download_dir: P) -> GalleryDownloader {
         GalleryDownloader {
             client,
             reqwest: util::create_http_client(),
+            download_dir: download_dir.as_ref().to_path_buf(),
         }
     }
 

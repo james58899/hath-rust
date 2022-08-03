@@ -131,7 +131,10 @@ async fn servercmd(
             let _ = data.command_channel.send(COMMAND::RefreshSettings).await; // Ignore error
             HttpResponse::Ok().finish()
         }
-        "start_downloader" => HttpResponse::Ok().finish(), // TODO
+        "start_downloader" => {
+            let _ = data.command_channel.send(COMMAND::StartDownloader).await; // Ignore error
+            HttpResponse::Ok().finish()
+        }
         "refresh_certs" => {
             let _ = data.command_channel.send(COMMAND::ReloadCert).await; // Ignore error
             HttpResponse::Ok().finish()
