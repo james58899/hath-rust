@@ -271,16 +271,17 @@ The program will now terminate.
     }
 
     pub async fn fetch_queue(&self, gallery: Option<GalleryMeta>) -> Option<Vec<String>> {
-        if let Ok(res) = self
-            .send_action1(
-                "fetchqueue",
-                gallery.map(|s| format!("{};{}", s.gid(), s.minxres())).as_deref(),
-                Some("dl"),
-            )
-            .await
-        {
-            if res.is_ok() {
-                return Some(res.data);
+        let additional = &gallery.map(|s| format!("{};{}", s.gid(), s.minxres())).unwrap_or_default();
+        let url = self.build_url("fetchqueue", additional, Some("dl"));
+        if let Ok(res) = self.send_request(url).await {
+            debug!("Received response: {}", res);
+            let lines: Vec<String> = res.lines().map(|s| s.to_string()).collect();
+            match lines[0].as_str() {
+                "INVALID_REQUEST" => {
+                    warn!("Request was rejected by the server");
+                }
+                "NO_PENDING_DOWNLOADS" => (),
+                _ => return Some(lines),
             }
         };
 
@@ -377,12 +378,8 @@ The program will now terminate.
     }
 
     async fn send_action(&self, action: &str, additional: Option<&str>) -> Result<ApiResponse, reqwest::Error> {
-        self.send_action1(action, additional, None).await
-    }
-
-    async fn send_action1(&self, action: &str, additional: Option<&str>, endpoint: Option<&str>) -> Result<ApiResponse, reqwest::Error> {
         let additional = additional.unwrap_or("");
-        let mut result = self.send_request(self.build_url(action, additional, endpoint)).await.map(|body| {
+        let mut result = self.send_request(self.build_url(action, additional, None)).await.map(|body| {
             debug!("Received response: {}", body);
             parse_response(&body)
         });
@@ -391,7 +388,7 @@ The program will now terminate.
             if response.is_key_expired() {
                 warn!("Server reported expired key; attempting to refresh time from server and retrying");
                 let _ = self.check_stat().await; // Sync clock
-                result = self.send_request(self.build_url(action, additional, endpoint)).await.map(|body| {
+                result = self.send_request(self.build_url(action, additional, None)).await.map(|body| {
                     debug!("Received response: {}", body);
                     parse_response(&body)
                 })
