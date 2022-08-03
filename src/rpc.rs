@@ -249,7 +249,7 @@ The program will now terminate.
         None
     }
 
-    pub async fn dl_fails(&self, failures: Vec<String>) {
+    pub async fn dl_fails(&self, failures: Vec<&str>) {
         if failures.is_empty() {
             return;
         }
@@ -261,10 +261,7 @@ The program will now terminate.
             return;
         }
 
-        let str = failures.join(";");
-
-        let srv_res = self.send_action("dlfails", Some(&str)).await;
-        // TODO report rpc server failure.
+        let srv_res = self.send_action("dlfails", Some(&failures.join(";"))).await;
 
         debug!(
             "Reported {} download failures with response {}.",
@@ -290,7 +287,7 @@ The program will now terminate.
         None
     }
 
-    pub async fn dl_fetch(&self, gid: i32, page: usize, fileindex: usize, xres: String, force_image_server: bool) -> Option<Vec<String>> {
+    pub async fn dl_fetch(&self, gid: i32, page: usize, fileindex: usize, xres: &str, force_image_server: bool) -> Option<Vec<String>> {
         if let Ok(res) = self
             .send_action(
                 "dlfetch",
