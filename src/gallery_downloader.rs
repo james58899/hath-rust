@@ -14,7 +14,7 @@ use reqwest::Url;
 use tokio::{
     fs::{self, create_dir_all},
     io::{AsyncReadExt, AsyncWriteExt},
-    time::sleep,
+    time::{sleep, sleep_until, Instant},
 };
 
 use crate::{error::Error, rpc::RPCClient, util};
@@ -87,27 +87,34 @@ impl GalleryDownloader {
                     }
 
                     // Get download URL and download file
+                    let mut start_time = Instant::now();
                     match self
                         .client
                         .dl_fetch(meta.gid, info.page, info.fileindex, &info.xres, retry % 2 != 0)
                         .await
                         .and_then(|s| Url::parse(&s[0]).ok())
                     {
-                        Some(url) => match self.download(url.clone(), &path, info.expected_sha1_hash).await {
-                            Ok(_) => {
-                                info!("Finished downloading gid={} page={}: {}.{}", meta.gid, info.page, info.filename, info.filetype);
-                                downloaded_files.insert(info);
-                            }
-                            Err(err) => {
-                                warn!("Gallery file download error: {}", err);
+                        Some(url) => {
+                            start_time = Instant::now();
+                            match self.download(url.clone(), &path, info.expected_sha1_hash).await {
+                                Ok(_) => {
+                                    info!(
+                                        "Finished downloading gid={} page={}: {}.{}",
+                                        meta.gid, info.page, info.filename, info.filetype
+                                    );
+                                    downloaded_files.insert(info);
+                                }
+                                Err(err) => {
+                                    warn!("Gallery file download error: {}", err);
 
-                                if err.is::<reqwest::Error>() || err.is::<Error>() {
-                                    if let Some(host) = url.host_str() {
-                                        meta.failures.push(format!("{}-{}-{}", host, info.fileindex, info.xres))
+                                    if err.is::<reqwest::Error>() || err.is::<Error>() {
+                                        if let Some(host) = url.host_str() {
+                                            meta.failures.push(format!("{}-{}-{}", host, info.fileindex, info.xres))
+                                        }
                                     }
                                 }
                             }
-                        },
+                        }
                         None => {
                             warn!(
                                 "Fetch gallery file download url fail. gid={}, page={}, fileindex={}",
@@ -117,7 +124,7 @@ impl GalleryDownloader {
                     };
 
                     // Wait 1s before next download, or 5s if download not success
-                    sleep(Duration::from_secs(if downloaded_files.contains(info) { 1 } else { 5 })).await;
+                    sleep_until(start_time + Duration::from_secs(if downloaded_files.contains(info) { 1 } else { 5 })).await;
                 }
 
                 if downloaded_files.len() == meta.filecount {
