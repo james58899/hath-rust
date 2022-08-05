@@ -13,7 +13,7 @@ use actix_web_lab::{
     header::{CacheControl, CacheDirective},
 };
 use async_stream::stream;
-use futures::StreamExt;
+use futures::{FutureExt, StreamExt};
 use log::error;
 use openssl::sha::Sha1;
 use tokio::{
@@ -56,8 +56,9 @@ async fn hath(
         if let Some(file) = data
             .cache_manager
             .get_file(&info)
+            .map(|f| async move { NamedFile::from_file(f?.into_std().await, &file_name).ok() })
+            .flatten()
             .await
-            .and_then(|f| NamedFile::from_file(f, &file_name).ok())
         {
             let cache_header = CacheControl(vec![CacheDirective::Public, CacheDirective::MaxAge(31536000)])
                 .try_into_pair()
@@ -75,7 +76,7 @@ async fn hath(
                 return HttpResponse::NotFound().body("An error has occurred. (404)");
             }
 
-            let temp_path = Arc::new(data.cache_manager.create_temp_file());
+            let temp_path = Arc::new(data.cache_manager.create_temp_file().await);
             let file_size = info.size() as u64;
             let (tx, mut rx) = watch::channel(0); // Download progress
 

@@ -98,7 +98,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let (shutdown_send, shutdown_recv) = mpsc::unbounded_channel::<()>();
     let settings = client.settings();
     let cache_manager = CacheManager::new(
-        Handle::current(),
         cache_dir,
         temp_dir,
         settings.clone(),
