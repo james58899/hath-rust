@@ -96,7 +96,7 @@ impl RPCClient {
             clock_offset: AtomicI64::new(0),
             id,
             key: key.to_string(),
-            reqwest: create_http_client(),
+            reqwest: create_http_client(Duration::from_secs(600)),
             rpc_servers: RwLock::new(vec![]),
             running: AtomicBool::new(false),
             settings: Arc::new(Settings {
@@ -399,7 +399,7 @@ The program will now terminate.
     }
 
     async fn send_request<U: IntoUrl>(&self, url: U) -> Result<String, reqwest::Error> {
-        match self.reqwest.get(url).timeout(Duration::from_secs(600)).send().await {
+        match self.reqwest.get(url).send().await {
             Ok(res) => Ok(res.text().await?),
             Err(err) => {
                 if err.is_connect() || err.is_timeout() || err.status().map_or(false, |s| s.is_server_error()) {

@@ -117,7 +117,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         cert,
         AppState {
             runtime: Handle::current(),
-            reqwest: create_http_client(),
+            reqwest: create_http_client(Duration::from_secs(10)),
             id,
             key,
             rpc: client.clone(),
