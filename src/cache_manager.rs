@@ -100,7 +100,6 @@ impl CacheManager {
 
     pub async fn get_file(&self, info: &CacheFileInfo) -> Option<File> {
         let file = info.get_file(&self.cache_dir).await;
-
         if file.is_some() {
             self.mark_recently_accessed(info, true).await;
         }
@@ -374,7 +373,7 @@ impl CacheManager {
 
             let files = read_dir(dirs[0].0).map_ok(ReadDirStream::new).await;
             if let Err(err) = files {
-                error!("Read cache dir error: {}", err);
+                error!("Read cache dir {:?} error: {}", dirs[0].0, err);
                 break;
             }
             let cut_off = dirs[1].1;
@@ -386,14 +385,15 @@ impl CacheManager {
                         error!("Read cache file error: {}", err);
                         return None;
                     }
-                    let entry = entry.unwrap();
 
-                    let metadata = entry.metadata().await;
-                    if let Err(err) = metadata {
-                        error!("Read cache file metadata error: {}", err);
-                        return None;
-                    }
-                    let metadata = metadata.unwrap();
+                    let entry = entry.ok()?;
+                    let metadata = match entry.metadata().await {
+                        Ok(metadata) => metadata,
+                        Err(err) => {
+                            error!("Read cache dir {:?} error: {}", entry.path(), err);
+                            return None;
+                        }
+                    };
 
                     if metadata.is_file() {
                         Some((entry, FileTime::from_last_modification_time(&metadata), metadata))
@@ -421,12 +421,13 @@ impl CacheManager {
                     continue;
                 }
 
-                let size = file_real_size_fast(&path, &metadata);
-                if let Err(err) = size {
-                    error!("Read cache file size error: {}", err);
-                    continue;
-                }
-                let size = size.unwrap();
+                let size = match file_real_size_fast(&path, &metadata) {
+                    Ok(size) => size,
+                    Err(err) => {
+                        error!("Read cache file {:?} size error: {}", path, err);
+                        continue;
+                    }
+                };
 
                 self.remove_cache(&info.unwrap()).await;
 
