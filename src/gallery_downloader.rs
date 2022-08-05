@@ -179,7 +179,7 @@ impl GalleryDownloader {
                     }
                     "FILECOUNT" => {
                         filecount = split[1].parse()?;
-                        debug!(" GalleryDownloader: Parsed filecount={}", filecount);
+                        debug!("GalleryDownloader: Parsed filecount={}", filecount);
                     }
                     "MINXRES" => {
                         if Regex::new(r"^org|\\d+$").unwrap().is_match(split[1]) {
