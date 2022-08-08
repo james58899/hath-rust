@@ -222,9 +222,9 @@ dependencies = [
 
 [[package]]
 name = "actix-web-lab"
-version = "0.16.5"
+version = "0.16.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ced9398918dbc46e69e16c22ee675cb02956dd0673eb36342efd75a21fb129c4"
+checksum = "b8e25a9040595caff3abdf449185bcb846bd5da0001d916212bf370e9f146009"
 dependencies = [
  "actix-files",
  "actix-http",
@@ -237,6 +237,7 @@ dependencies = [
  "arc-swap",
  "async-trait",
  "bytes",
+ "bytestring",
  "csv",
  "derive_more",
  "digest",
