@@ -4,7 +4,7 @@ use std::{
     ops::RangeInclusive,
     path::Path,
     sync::Arc,
-    time::Duration,
+    time::Duration, collections::HashMap,
 };
 
 use actix_tls::accept::openssl::TlsStream;
@@ -25,6 +25,7 @@ use openssl::{
     ssl::{ClientHelloResponse, SslAcceptor, SslAcceptorBuilder, SslMethod, SslOptions},
 };
 use parking_lot::RwLock;
+use tempfile::TempPath;
 use tokio::{
     fs::File,
     io::{AsyncBufReadExt, BufReader},
@@ -51,19 +52,21 @@ mod route;
 mod rpc;
 mod util;
 
+type DownloadState = RwLock<HashMap<[u8; 20], (Arc<TempPath>, watch::Receiver<u64>)>>;
+
 #[global_allocator]
 static GLOBAL: MiMalloc = MiMalloc;
 
 static CLIENT_VERSION: &str = "1.6.1";
 static MAX_KEY_TIME_DRIFT: RangeInclusive<i64> = -300..=300;
 
-#[derive(Clone)]
 struct AppState {
     runtime: Handle,
     reqwest: reqwest::Client,
     id: i32,
     key: String,
     rpc: Arc<RPCClient>,
+    download_state: DownloadState,
     cache_manager: Arc<CacheManager>,
     command_channel: Sender<COMMAND>,
 }
@@ -125,6 +128,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             id,
             key,
             rpc: client.clone(),
+            download_state: RwLock::new(HashMap::new()),
             cache_manager: cache_manager.clone(),
             command_channel: tx,
         },
