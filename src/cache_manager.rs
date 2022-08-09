@@ -120,6 +120,10 @@ impl CacheManager {
             self.cache_date.lock().insert(dir.to_path_buf(), FileTime::now());
         }
 
+        // Try remove existing file
+        self.remove_cache(info).await;
+
+        // Importing
         if rename(&file_path, &path).await.is_err() {
             // Can't cross fs move file, try copy.
             if let Err(err) = copy(file_path, &path).await {
