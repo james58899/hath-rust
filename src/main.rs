@@ -1,10 +1,11 @@
 use std::{
+    collections::HashMap,
     error::Error,
     net::{Ipv4Addr, SocketAddrV4},
     ops::RangeInclusive,
     path::Path,
     sync::Arc,
-    time::Duration, collections::HashMap,
+    time::Duration,
 };
 
 use actix_tls::accept::openssl::TlsStream;
@@ -24,7 +25,7 @@ use openssl::{
     pkcs12::ParsedPkcs12,
     ssl::{ClientHelloResponse, SslAcceptor, SslAcceptorBuilder, SslMethod, SslOptions},
 };
-use parking_lot::RwLock;
+use parking_lot::{Mutex, RwLock};
 use tempfile::TempPath;
 use tokio::{
     fs::File,
@@ -35,17 +36,19 @@ use tokio::{
         mpsc::{self, Sender, UnboundedReceiver},
         watch,
     },
-    time::{sleep_until, Instant, sleep},
+    time::{sleep, sleep_until, Instant},
 };
 
 use crate::{
     cache_manager::{CacheFileInfo, CacheManager},
+    gallery_downloader::GalleryDownloader,
     rpc::RPCClient,
     util::{create_dirs, create_http_client},
 };
 
 mod cache_manager;
 mod error;
+mod gallery_downloader;
 mod logger;
 mod middleware;
 mod route;
@@ -74,6 +77,7 @@ struct AppState {
 enum COMMAND {
     ReloadCert,
     RefreshSettings,
+    StartDownloader,
 }
 
 #[tokio::main]
@@ -100,14 +104,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let (shutdown_send, shutdown_recv) = mpsc::unbounded_channel::<()>();
     let settings = client.settings();
-    let cache_manager = CacheManager::new(
-        cache_dir,
-        temp_dir,
-        settings.clone(),
-        &init_settings,
-        shutdown_send.clone(),
-    )
-    .await?;
+    let cache_manager = CacheManager::new(cache_dir, temp_dir, settings.clone(), &init_settings, shutdown_send.clone()).await?;
 
     // command channel
     let (tx, mut rx) = mpsc::channel::<COMMAND>(1);
@@ -124,7 +121,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         cert,
         AppState {
             runtime: Handle::current(),
-            reqwest: create_http_client(),
+            reqwest: create_http_client(Duration::from_secs(10)),
             id,
             key,
             rpc: client.clone(),
@@ -159,6 +156,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     // Command listener
     let client2 = client.clone();
+    let downloader = Arc::new(Mutex::new(None));
+    let downloader2 = downloader.clone();
     tokio::spawn(async move {
         while let Some(command) = rx.recv().await {
             match command {
@@ -171,6 +170,17 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 }
                 COMMAND::RefreshSettings => {
                     client2.refresh_settings().await;
+                }
+                COMMAND::StartDownloader => {
+                    let mut downloader = downloader2.lock();
+                    if downloader.is_none() {
+                        let new = GalleryDownloader::new(client2.clone(), download_dir);
+                        let downloader3 = downloader2.clone();
+                        *downloader = Some(tokio::spawn(async move {
+                            new.run().await;
+                            *downloader3.lock() = None;
+                        }))
+                    }
                 }
             }
         }
@@ -211,6 +221,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
     info!("Shutting down...");
     keepalive.abort();
     client.shutdown().await;
+    if let Some(job) = downloader.lock().as_ref() {
+        job.abort();
+    }
     info!("Shutdown in progress - please wait");
     sleep(Duration::from_secs(5)).await;
     server_handle.stop(true).await;

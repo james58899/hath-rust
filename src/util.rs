@@ -12,12 +12,12 @@ pub fn string_to_hash(str: String) -> String {
     hex::encode(hasher.finish())
 }
 
-pub fn create_http_client() -> reqwest::Client {
+pub fn create_http_client(timeout: Duration) -> reqwest::Client {
     reqwest::ClientBuilder::new()
         .user_agent(format!("Hentai@Home {}", CLIENT_VERSION))
         .tcp_keepalive(Duration::from_secs(75)) // Linux default keepalive inverval
         .connect_timeout(Duration::from_secs(5))
-        .timeout(Duration::from_secs(10))
+        .timeout(timeout)
         .pool_idle_timeout(Duration::from_secs(3600))
         .pool_max_idle_per_host(8)
         .http1_title_case_headers()

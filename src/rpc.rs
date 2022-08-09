@@ -20,6 +20,7 @@ use reqwest::{IntoUrl, Url};
 
 use crate::{
     error::Error,
+    gallery_downloader::GalleryMeta,
     util::{create_http_client, string_to_hash},
 };
 
@@ -90,7 +91,7 @@ impl RPCClient {
             clock_offset: AtomicI64::new(0),
             id,
             key: key.to_string(),
-            reqwest: create_http_client(),
+            reqwest: create_http_client(Duration::from_secs(600)),
             rpc_servers: RwLock::new(vec![]),
             running: AtomicBool::new(false),
             settings: Arc::new(Settings {
@@ -264,6 +265,70 @@ The program will now terminate.
         None
     }
 
+    pub async fn dl_fails(&self, failures: Vec<&str>) {
+        if failures.is_empty() {
+            return;
+        }
+
+        let failcount = failures.len();
+
+        if !(1..=50).contains(&failcount) {
+            // if we're getting a lot of distinct failures, it's probably a problem with this client
+            return;
+        }
+
+        let srv_res = self.send_action("dlfails", Some(&failures.join(";"))).await;
+
+        debug!(
+            "Reported {} download failures with response {}.",
+            failcount,
+            if srv_res.is_ok() { "OK" } else { "Fail" }
+        );
+    }
+
+    pub async fn fetch_queue(&self, gallery: Option<GalleryMeta>) -> Option<Vec<String>> {
+        let additional = &gallery.map(|s| format!("{};{}", s.gid(), s.minxres())).unwrap_or_default();
+        let url = self.build_url("fetchqueue", additional, Some("dl"));
+        if let Ok(res) = self.send_request(url).await {
+            debug!("Received response: {}", res);
+            let lines: Vec<String> = res.lines().map(|s| s.to_string()).collect();
+            match lines[0].as_str() {
+                "INVALID_REQUEST" => {
+                    warn!("Request was rejected by the server");
+                }
+                "NO_PENDING_DOWNLOADS" => (),
+                _ => return Some(lines),
+            }
+        };
+
+        None
+    }
+
+    pub async fn dl_fetch(&self, gid: i32, page: usize, fileindex: usize, xres: &str, force_image_server: bool) -> Option<Vec<String>> {
+        if let Ok(res) = self
+            .send_action(
+                "dlfetch",
+                Some(&format!(
+                    "{};{};{};{};{}",
+                    gid,
+                    page,
+                    fileindex,
+                    xres,
+                    if force_image_server { 1 } else { 0 }
+                )),
+            )
+            .await
+        {
+            if res.is_ok() {
+                return Some(res.data);
+            } else {
+                panic!("Failed to request gallery file url for fileindex={}", fileindex);
+            }
+        }
+
+        None
+    }
+
     pub async fn shutdown(&self) {
         if self.running.swap(false, Ordering::Relaxed) {
             let _ = self.send_action("client_stop", None).await;
@@ -329,15 +394,11 @@ The program will now terminate.
     }
 
     async fn send_action(&self, action: &str, additional: Option<&str>) -> Result<ApiResponse, RequestError> {
-        self.send_action1(action, additional, None).await
-    }
-
-    async fn send_action1(&self, action: &str, additional: Option<&str>, endpoint: Option<&str>) -> Result<ApiResponse, RequestError> {
         let additional = additional.unwrap_or("");
         let mut error: RequestError = Box::new(Error::connection_error("Failed to connect to server."));
         let mut retry = 3;
         while retry > 0 {
-            match self.send_request(self.build_url(action, additional, endpoint)).await {
+            match self.send_request(self.build_url(action, additional, None)).await {
                 Ok(body) => {
                     debug!("Received response: {}", body);
                     let response = parse_response(&body);

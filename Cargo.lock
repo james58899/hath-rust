@@ -816,6 +816,7 @@ dependencies = [
  "parking_lot",
  "pin-project-lite",
  "rand",
+ "regex",
  "reqwest",
  "tempfile",
  "tokio",

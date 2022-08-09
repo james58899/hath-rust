@@ -7,6 +7,7 @@ pub enum Error {
     ApiResponseFail { fail_code: String, message: String },
     ConnectTestFail,
     InitSettingsMissing(String),
+    HashMismatch { expected: [u8;20], actual: [u8;20] },
 }
 
 impl Error {
@@ -28,6 +29,7 @@ impl fmt::Display for Error {
             Error::ApiResponseFail { fail_code, message } => write!(f, "Code={}, Message={}", fail_code, message),
             Error::ConnectTestFail => write!(f, "Connect test failed"),
             Error::InitSettingsMissing(settings) => write!(f, "Missing init settings: {}", settings),
+            Error::HashMismatch { expected, actual } => write!(f, "Hash missmatch. Expected={:?}, Actual={:?}", expected, actual),
         }
     }
 }
