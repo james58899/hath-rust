@@ -1,4 +1,5 @@
 use std::{
+    collections::HashMap,
     error::Error,
     net::{Ipv4Addr, SocketAddrV4},
     ops::RangeInclusive,
@@ -25,6 +26,7 @@ use openssl::{
     ssl::{ClientHelloResponse, SslAcceptor, SslAcceptorBuilder, SslMethod, SslOptions},
 };
 use parking_lot::{Mutex, RwLock};
+use tempfile::TempPath;
 use tokio::{
     fs::File,
     io::{AsyncBufReadExt, BufReader},
@@ -34,7 +36,7 @@ use tokio::{
         mpsc::{self, Sender, UnboundedReceiver},
         watch,
     },
-    time::{sleep_until, Instant},
+    time::{sleep, sleep_until, Instant},
 };
 
 use crate::{
@@ -46,12 +48,14 @@ use crate::{
 
 mod cache_manager;
 mod error;
+mod gallery_downloader;
 mod logger;
 mod middleware;
 mod route;
 mod rpc;
 mod util;
-pub mod gallery_downloader;
+
+type DownloadState = RwLock<HashMap<[u8; 20], (Arc<TempPath>, watch::Receiver<u64>)>>;
 
 #[global_allocator]
 static GLOBAL: MiMalloc = MiMalloc;
@@ -59,13 +63,13 @@ static GLOBAL: MiMalloc = MiMalloc;
 static CLIENT_VERSION: &str = "1.6.1";
 static MAX_KEY_TIME_DRIFT: RangeInclusive<i64> = -300..=300;
 
-#[derive(Clone)]
 struct AppState {
     runtime: Handle,
     reqwest: reqwest::Client,
     id: i32,
     key: String,
     rpc: Arc<RPCClient>,
+    download_state: DownloadState,
     cache_manager: Arc<CacheManager>,
     command_channel: Sender<COMMAND>,
 }
@@ -96,11 +100,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
         None => todo!("Setup client"),
     };
     let client = Arc::new(RPCClient::new(id, &key));
-    client.login().await?;
+    let init_settings = client.login().await?;
 
     let (shutdown_send, shutdown_recv) = mpsc::unbounded_channel::<()>();
     let settings = client.settings();
-    let cache_manager = CacheManager::new(Handle::current(), cache_dir, temp_dir, settings.clone(), shutdown_send.clone()).await?;
+    let cache_manager = CacheManager::new(cache_dir, temp_dir, settings.clone(), &init_settings, shutdown_send.clone()).await?;
 
     // command channel
     let (tx, mut rx) = mpsc::channel::<COMMAND>(1);
@@ -113,7 +117,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     }
 
     let (server, cert_changer) = create_server(
-        client.settings().client_port(),
+        init_settings.client_port(),
         cert,
         AppState {
             runtime: Handle::current(),
@@ -121,6 +125,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             id,
             key,
             rpc: client.clone(),
+            download_state: RwLock::new(HashMap::new()),
             cache_manager: cache_manager.clone(),
             command_channel: tx,
         },
@@ -132,7 +137,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     tokio::spawn(server);
 
     info!("Notifying the server that we have finished starting up the client...");
-    if client.connect_check().await.is_none() {
+    if client.connect_check(init_settings).await.is_none() {
         error!("Startup notification failed.");
         return Err(error::Error::ConnectTestFail.into());
     }
@@ -220,6 +225,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         job.abort();
     }
     info!("Shutdown in progress - please wait");
+    sleep(Duration::from_secs(5)).await;
     server_handle.stop(true).await;
     Ok(())
 }

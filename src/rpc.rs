@@ -3,7 +3,7 @@ use std::{
     net::IpAddr,
     str::FromStr,
     sync::{
-        atomic::{AtomicBool, AtomicI64, AtomicU16, AtomicU64, Ordering},
+        atomic::{AtomicBool, AtomicI64, AtomicU64, Ordering},
         Arc,
     },
     time::{Duration, Instant},
@@ -27,6 +27,8 @@ use crate::{
 const API_VERSION: i32 = 154; // For server check capabilities.
 const DEFAULT_SERVER: &str = "rpc.hentaiathome.net";
 
+type RequestError = Box<dyn std::error::Error + Send + Sync>;
+
 pub struct RPCClient {
     api_base: RwLock<Url>,
     clock_offset: AtomicI64,
@@ -39,50 +41,43 @@ pub struct RPCClient {
 }
 
 pub struct Settings {
-    client_port: AtomicU16,
-    client_host: RwLock<String>,
     size_limit: AtomicU64,
-    static_range: RwLock<Vec<String>>,
-    verify_cache: AtomicBool,
+}
+
+pub struct InitSettings {
+    client_port: u16,
+    client_host: String,
+    verify_cache: bool,
+    static_range: Vec<String>,
+}
+
+impl InitSettings {
+    pub fn client_port(&self) -> u16 {
+        self.client_port
+    }
+
+    pub fn client_host(&self) -> &str {
+        self.client_host.as_ref()
+    }
+
+    pub fn verify_cache(&self) -> bool {
+        self.verify_cache
+    }
+
+    pub fn static_range(&self) -> Vec<String> {
+        self.static_range.clone()
+    }
 }
 
 impl Settings {
-    /// Get a reference to the settings's client port.
-    pub fn client_port(&self) -> u16 {
-        self.client_port.load(Ordering::Relaxed)
-    }
-
     /// Get a reference to the settings's size limit.
     pub fn size_limit(&self) -> u64 {
         self.size_limit.load(Ordering::Relaxed)
     }
 
-    /// Get a reference to the settings's static range.
-    pub fn static_range(&self) -> Vec<String> {
-        self.static_range.read().clone()
-    }
-
-    /// Get a reference to the settings's verify cache.
-    pub fn verify_cache(&self) -> bool {
-        self.verify_cache.load(Ordering::Relaxed)
-    }
-
     fn update(&self, settings: HashMap<String, String>) {
-        // Update Host & Port
-        if let Some(host) = settings.get("host") {
-            *self.client_host.write() = host.to_owned();
-        }
-        if let Some(port) = settings.get("port").and_then(|s| s.parse().ok()) {
-            self.client_port.store(port, Ordering::Relaxed);
-        }
         if let Some(size) = settings.get("disklimit_bytes").and_then(|s| s.parse().ok()) {
             self.size_limit.store(size, Ordering::Relaxed);
-        }
-        if let Some(static_range) = settings.get("static_ranges").map(|s| s.split(';').map(|s| s.to_string()).collect()) {
-            *self.static_range.write() = static_range;
-        }
-        if let Some(verify_cache) = settings.get("verify_cache").map(|s| s == "true") {
-            self.verify_cache.store(verify_cache, Ordering::Relaxed);
         }
 
         // TODO update other settings
@@ -100,16 +95,12 @@ impl RPCClient {
             rpc_servers: RwLock::new(vec![]),
             running: AtomicBool::new(false),
             settings: Arc::new(Settings {
-                client_port: AtomicU16::new(0),
-                client_host: RwLock::new(String::new()),
                 size_limit: AtomicU64::new(u64::MAX),
-                static_range: RwLock::new(vec![]),
-                verify_cache: AtomicBool::new(false),
             }),
         }
     }
 
-    pub async fn login(&self) -> Result<(), Error> {
+    pub async fn login(&self) -> Result<InitSettings, Error> {
         // Version & time check
         if let Some((min, new)) = self.check_stat().await? {
             if min > API_VERSION {
@@ -128,8 +119,33 @@ impl RPCClient {
 
         let res = res.unwrap();
         if res.is_ok() {
-            self.update_settings(res.to_map());
-            Ok(())
+            let map = res.to_map();
+
+            let client_port = map
+                .get("port")
+                .and_then(|s| s.parse().ok())
+                .ok_or_else(|| Error::InitSettingsMissing("port".to_string()))?;
+            let client_host = map
+                .get("host")
+                .ok_or_else(|| Error::InitSettingsMissing("host".to_string()))?
+                .to_owned();
+            let verify_cache = map
+                .get("verify_cache")
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(false);
+            let static_range = map
+                .get("static_ranges")
+                .map(|s| s.split(';').map(|s| s.to_string()).collect())
+                .ok_or_else(|| Error::InitSettingsMissing("static_ranges".to_string()))?;
+
+            self.update_settings(map);
+
+            Ok(InitSettings {
+                client_port,
+                client_host,
+                verify_cache,
+                static_range,
+            })
         } else {
             Err(Error::ApiResponseFail {
                 fail_code: res.status,
@@ -170,7 +186,7 @@ impl RPCClient {
             .timestamp()
     }
 
-    pub async fn connect_check(&self) -> Option<()> {
+    pub async fn connect_check(&self, settings: InitSettings) -> Option<()> {
         if let Ok(res) = self.send_action("client_start", None).await {
             if res.is_ok() {
                 self.running.store(true, Ordering::Relaxed);
@@ -193,8 +209,8 @@ Use Program -> Exit in windowed mode or hit Ctrl+C in console mode to exit the p
 ************************************************************************************************************************************
 
 "#,
-                    self.settings.client_port.load(Ordering::Relaxed),
-                    self.settings.client_host.read()
+                    settings.client_port(),
+                    settings.client_host()
                 ),
                 "FAIL_OTHER_CLIENT_CONNECTED" => error!(
                     r#"
@@ -377,37 +393,43 @@ The program will now terminate.
         }
     }
 
-    async fn send_action(&self, action: &str, additional: Option<&str>) -> Result<ApiResponse, reqwest::Error> {
+    async fn send_action(&self, action: &str, additional: Option<&str>) -> Result<ApiResponse, RequestError> {
         let additional = additional.unwrap_or("");
-        let mut result = self.send_request(self.build_url(action, additional, None)).await.map(|body| {
-            debug!("Received response: {}", body);
-            parse_response(&body)
-        });
-
-        if let Ok(response) = &result {
-            if response.is_key_expired() {
-                warn!("Server reported expired key; attempting to refresh time from server and retrying");
-                let _ = self.check_stat().await; // Sync clock
-                result = self.send_request(self.build_url(action, additional, None)).await.map(|body| {
+        let mut error: RequestError = Box::new(Error::connection_error("Failed to connect to server."));
+        let mut retry = 3;
+        while retry > 0 {
+            match self.send_request(self.build_url(action, additional, None)).await {
+                Ok(body) => {
                     debug!("Received response: {}", body);
-                    parse_response(&body)
-                })
+                    let response = parse_response(&body);
+                    if response.is_key_expired() {
+                        warn!("Server reported expired key; attempting to refresh time from server and retrying");
+                        let _ = self.check_stat().await; // Sync clock
+                        continue;
+                    }
+                    return Ok(response);
+                }
+                Err(err) => {
+                    if err.is_connect() || err.is_timeout() || err.status().map_or(false, |s| s.is_server_error()) {
+                        self.change_server();
+                    }
+                    error = Box::new(err);
+                }
             }
+            retry -= 1;
         }
 
-        result
+        Err(error)
     }
 
     async fn send_request<U: IntoUrl>(&self, url: U) -> Result<String, reqwest::Error> {
-        match self.reqwest.get(url).send().await {
-            Ok(res) => Ok(res.text().await?),
-            Err(err) => {
-                if err.is_connect() || err.is_timeout() || err.status().map_or(false, |s| s.is_server_error()) {
-                    self.change_server();
-                }
-                Err(err)
-            }
-        }
+        self.reqwest
+            .get(url)
+            .timeout(Duration::from_secs(600))
+            .send()
+            .map_ok(|res| res.text())
+            .try_flatten()
+            .await
     }
 
     fn build_url(&self, action: &str, additional: &str, endpoint: Option<&str>) -> Url {
@@ -449,7 +471,7 @@ The program will now terminate.
             debug!("Setting altered: rpc_server_ip={}", self.rpc_servers.read().join(";"));
             self.change_server();
         }
-        // Update Host & Port
+        // Update settings
         self.settings.update(settings);
     }
 

@@ -5,7 +5,10 @@ use actix_web_lab::extract::Path;
 use futures::TryStreamExt;
 use log::debug;
 use rand::{prelude::SmallRng, Rng, SeedableRng};
-use reqwest::Url;
+use reqwest::{
+    header::{HeaderValue, CONNECTION},
+    Url,
+};
 
 use crate::{
     route::{forbidden, parse_additional, speed_test::random_response},
@@ -83,7 +86,8 @@ async fn servercmd(
                 let reqwest = data.reqwest.clone();
                 requests.push(tokio::spawn(async move {
                     for retry in 0..3 {
-                        match reqwest.get(url.clone()).send().await {
+                        let request = reqwest.get(url.clone()).header(CONNECTION, HeaderValue::from_static("Close"));
+                        match request.send().await {
                             Ok(res) => {
                                 let start = Instant::now();
 

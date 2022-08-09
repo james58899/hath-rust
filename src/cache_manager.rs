@@ -1,7 +1,7 @@
 use std::{
     collections::HashMap,
     fmt::Display,
-    fs::{remove_file, File, Metadata},
+    fs::Metadata,
     io::Error,
     path::{Path, PathBuf},
     sync::{
@@ -21,16 +21,16 @@ use openssl::sha::Sha1;
 use parking_lot::{Mutex, RwLock};
 use tempfile::TempPath;
 use tokio::{
-    fs::{copy, create_dir_all, metadata, read_dir, remove_dir_all, rename, DirEntry},
+    fs::{copy, create_dir_all, metadata, read_dir, remove_dir_all, remove_file, rename, DirEntry, File},
     io::AsyncReadExt,
-    runtime::Handle,
+    spawn,
     sync::mpsc::UnboundedSender,
     task::spawn_blocking,
     time::{sleep_until, Instant},
 };
 use tokio_stream::wrappers::ReadDirStream;
 
-use crate::rpc::Settings;
+use crate::rpc::{InitSettings, Settings};
 
 const LRU_SIZE: usize = 1048576;
 
@@ -39,7 +39,6 @@ pub struct CacheManager {
     cache_date: Mutex<HashMap<PathBuf, FileTime>>,
     lru_cache: RwLock<Vec<u16>>, // 2MiB
     lru_clear_pos: Mutex<usize>,
-    runtime: Handle,
     settings: Arc<Settings>,
     temp_dir: PathBuf,
     total_size: Arc<AtomicU64>,
@@ -47,10 +46,10 @@ pub struct CacheManager {
 
 impl CacheManager {
     pub async fn new<P: AsRef<Path>>(
-        runtime: Handle,
         cache_dir: P,
         temp_dir: P,
         settings: Arc<Settings>,
+        init_settings: &InitSettings,
         shutdown: UnboundedSender<()>,
     ) -> Result<Arc<Self>, Error> {
         let new = Arc::new(Self {
@@ -58,23 +57,24 @@ impl CacheManager {
             cache_date: Mutex::new(HashMap::new()),
             lru_cache: RwLock::new(vec![0; LRU_SIZE]),
             lru_clear_pos: Mutex::new(0),
-            runtime,
             settings,
             temp_dir: temp_dir.as_ref().to_path_buf(),
             total_size: Arc::new(AtomicU64::new(0)),
         });
 
         let manager = new.clone();
-        if new.settings.verify_cache() {
+        let verify_cache = init_settings.verify_cache();
+        let static_range = init_settings.static_range();
+        if verify_cache {
             // Force check cache
             info!("Start force cache check");
-            new.scan_cache(16).await?;
+            new.scan_cache(static_range, 16, verify_cache).await?;
             CacheManager::start_background_task(manager);
         } else {
             // Background cache scan
             info!("Start background cache scan");
-            new.runtime.spawn(async move {
-                if let Err(err) = manager.scan_cache(1).await {
+            spawn(async move {
+                if let Err(err) = manager.scan_cache(static_range, 1, verify_cache).await {
                     error!("Cache scan error: {}", err);
                     let _ = shutdown.send(());
                 }
@@ -85,32 +85,33 @@ impl CacheManager {
         Ok(new)
     }
 
-    pub fn create_temp_file(&self) -> TempPath {
-        tempfile::Builder::new()
-            .prefix("proxyfile_")
-            .tempfile_in(&self.temp_dir)
-            .unwrap()
-            .into_temp_path()
+    pub async fn create_temp_file(&self) -> TempPath {
+        let temp_dir = self.temp_dir.clone();
+        spawn_blocking(|| {
+            tempfile::Builder::new()
+                .prefix("proxyfile_")
+                .tempfile_in(temp_dir)
+                .unwrap()
+                .into_temp_path()
+        })
+        .await
+        .unwrap()
     }
 
     pub async fn get_file(&self, info: &CacheFileInfo) -> Option<File> {
-        let file = info.get_file(&self.cache_dir);
-
+        let file = info.get_file(&self.cache_dir).await;
         if file.is_some() {
-            let rt = self.runtime.enter();
             self.mark_recently_accessed(info, true).await;
-            drop(rt);
         }
 
         file
     }
 
     pub async fn import_cache(&self, info: &CacheFileInfo, file_path: &TempPath) {
-        let _rt = self.runtime.enter();
         let path = info.to_path(&self.cache_dir);
         let dir = path.parent().unwrap();
 
-        if !dir.exists() {
+        if metadata(dir).await.is_err() {
             if let Err(err) = create_dir_all(dir).await {
                 error!("Create cache directory fail: {}", err);
                 return;
@@ -119,6 +120,10 @@ impl CacheManager {
             self.cache_date.lock().insert(dir.to_path_buf(), FileTime::now());
         }
 
+        // Try remove existing file
+        self.remove_cache(info).await;
+
+        // Importing
         if rename(&file_path, &path).await.is_err() {
             // Can't cross fs move file, try copy.
             if let Err(err) = copy(file_path, &path).await {
@@ -140,27 +145,25 @@ impl CacheManager {
 
     pub async fn remove_cache(&self, info: &CacheFileInfo) {
         let path = info.to_path(&self.cache_dir);
-        if path.exists() {
+        if metadata(&path).await.is_ok() {
             debug!("Delete cache: {:?}", path);
             let total_size = self.total_size.clone();
-            let _ = self
-                .runtime
-                .spawn_blocking(move || match file_real_size(&path) {
-                    Ok(size) => match remove_file(&path) {
-                        Ok(_) => {
-                            total_size.fetch_sub(size, Relaxed);
-                        }
-                        Err(err) => error!("Delete cache file error: path={:?}, err={}", &path, err),
-                    },
-                    Err(err) => error!("Read cache file size error: path={:?}, err={}", &path, err),
-                })
-                .await;
+            let _ = spawn_blocking(move || match file_real_size(&path) {
+                Ok(size) => match std::fs::remove_file(&path) {
+                    Ok(_) => {
+                        total_size.fetch_sub(size, Relaxed);
+                    }
+                    Err(err) => error!("Delete cache file error: path={:?}, err={}", &path, err),
+                },
+                Err(err) => error!("Read cache file size error: path={:?}, err={}", &path, err),
+            })
+            .await;
         }
     }
 
     fn start_background_task(new: Arc<Self>) {
         let manager = Arc::downgrade(&new);
-        new.runtime.spawn(async move {
+        spawn(async move {
             let mut counter: u32 = 0;
             let mut next_run = Instant::now() + Duration::from_secs(10);
             while let Some(manager) = manager.upgrade() {
@@ -210,8 +213,7 @@ impl CacheManager {
         }
     }
 
-    async fn scan_cache(&self, parallelism: usize) -> Result<(), Error> {
-        let static_range = self.settings.static_range();
+    async fn scan_cache(&self, static_range: Vec<String>, parallelism: usize, verify_cache: bool) -> Result<(), Error> {
         let mut dirs = Vec::with_capacity(static_range.len());
 
         let mut root = read_dir(&self.cache_dir).map_ok(ReadDirStream::new).await?;
@@ -277,18 +279,20 @@ impl CacheManager {
                     if size != info.size() as u64 {
                         warn!(
                             "Delete corrupt cache file: path={:?}, size={:x?}, actual={:x?}",
-                            &path, &info.size(), size
+                            &path,
+                            &info.size(),
+                            size
                         );
 
-                        if let Err(err) = tokio::fs::remove_file(&path).await {
+                        if let Err(err) = remove_file(&path).await {
                             error!("Delete corrupt cache file error: path={:?}, err={}", &path, err);
                         }
                         continue;
                     }
 
-                    if self.settings.verify_cache() {
+                    if verify_cache {
                         let mut hasher = Sha1::new();
-                        let mut file = tokio::fs::File::open(&path).await?;
+                        let mut file = File::open(&path).await?;
                         let mut buf = vec![0; 1024 * 1024]; // 1MiB
                         loop {
                             let n = file.read(&mut buf).await?;
@@ -303,7 +307,7 @@ impl CacheManager {
                                 "Delete corrupt cache file: path={:?}, hash={:x?}, actual={:x?}",
                                 path, &info.hash, &actual_hash
                             );
-                            if let Err(err) = tokio::fs::remove_file(&path).await {
+                            if let Err(err) = remove_file(&path).await {
                                 error!("Delete corrupt cache file error: path={:?}, err={}", path, err);
                             }
                             continue;
@@ -373,7 +377,7 @@ impl CacheManager {
 
             let files = read_dir(dirs[0].0).map_ok(ReadDirStream::new).await;
             if let Err(err) = files {
-                error!("Read cache dir error: {}", err);
+                error!("Read cache dir {:?} error: {}", dirs[0].0, err);
                 break;
             }
             let cut_off = dirs[1].1;
@@ -385,14 +389,15 @@ impl CacheManager {
                         error!("Read cache file error: {}", err);
                         return None;
                     }
-                    let entry = entry.unwrap();
 
-                    let metadata = entry.metadata().await;
-                    if let Err(err) = metadata {
-                        error!("Read cache file metadata error: {}", err);
-                        return None;
-                    }
-                    let metadata = metadata.unwrap();
+                    let entry = entry.ok()?;
+                    let metadata = match entry.metadata().await {
+                        Ok(metadata) => metadata,
+                        Err(err) => {
+                            error!("Read cache dir {:?} error: {}", entry.path(), err);
+                            return None;
+                        }
+                    };
 
                     if metadata.is_file() {
                         Some((entry, FileTime::from_last_modification_time(&metadata), metadata))
@@ -420,12 +425,13 @@ impl CacheManager {
                     continue;
                 }
 
-                let size = file_real_size_fast(&path, &metadata);
-                if let Err(err) = size {
-                    error!("Read cache file size error: {}", err);
-                    continue;
-                }
-                let size = size.unwrap();
+                let size = match file_real_size_fast(&path, &metadata) {
+                    Ok(size) => size,
+                    Err(err) => {
+                        error!("Read cache file {:?} size error: {}", path, err);
+                        continue;
+                    }
+                };
 
                 self.remove_cache(&info.unwrap()).await;
 
@@ -524,11 +530,11 @@ impl CacheFileInfo {
             .join(format!("{}-{}-{}-{}-{}", hash, self.size, self.xres, self.yres, self.mime_type))
     }
 
-    fn get_file(&self, cache_dir: &Path) -> Option<File> {
+    async fn get_file(&self, cache_dir: &Path) -> Option<File> {
         let path = self.to_path(cache_dir);
-
-        if path.exists() && path.is_file() {
-            File::open(path).ok()
+        let metadata = metadata(&path).await;
+        if metadata.is_ok() && metadata.unwrap().is_file() {
+            File::open(path).await.ok()
         } else {
             None
         }
