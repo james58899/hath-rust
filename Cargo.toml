@@ -2,16 +2,15 @@
 name = "hath-rust"
 version = "0.1.0"
 edition = "2021"
-resolver = "1" # Need for replace openssl-src as it is dev-dependency
 
 [dependencies]
 actix-files = "0.6"
 actix-tls = { version = "*", default-features = false, features = ["accept"] }
-actix-web = { version = "4.0", default-features = false, features = ["macros", "openssl"] }
-actix-web-lab = "0.16"
+actix-web = { version = "4.1", default-features = false, features = ["macros", "openssl"] }
+actix-web-lab = "0.17"
 async-stream = "0.3"
 chrono = "0.4"
-clap = { version = "3.1.5", features = ["derive"] }
+clap = { version = "3.2", features = ["derive"] }
 cpufeatures = "0.2"
 filesize = "0.2"
 filetime = "0.2"
@@ -20,20 +19,22 @@ hex = "0.4"
 log = "0.4"
 mimalloc = { version = "0.1", default-features = false }
 mime = "0.3"
-openssl = { version = "0.10", features = ["vendored"] }
-openssl-src = { version = "*", features = ["weak-crypto"] }
+openssl = { version = "*", features = ["vendored"] }
 parking_lot = { version = "0.12", features = ["hardware-lock-elision", "deadlock_detection"] }
 pin-project-lite = "0.2"
 rand = { version = "0.8", default-features = false, features = ["small_rng"] }
+regex = "1.6"
 reqwest = { version = "0.11", default-features = false, features = ["rustls-tls", "stream"] }
 tempfile = "3.3"
 tokio = { version = "1", features = ["full", "parking_lot"] }
 tokio-stream = { version = "0.1", default-features = false, features = ["fs"] }
-regex = "1.6.0"
+
+[build-dependencies]
+openssl-src = { version = "*", features = ["weak-crypto"] }
 
 [patch.crates-io]
 openssl = { git = "https://github.com/sfackler/rust-openssl" }
-openssl-src = { git = 'https://github.com/james58899/openssl-src-rs', branch = "release/111" }
+openssl-src = { git = 'https://github.com/alexcrichton/openssl-src-rs', branch = "release/111" }
 openssl-sys = { git = 'https://github.com/sfackler/rust-openssl' }
 
 [profile.release]
