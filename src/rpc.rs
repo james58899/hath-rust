@@ -129,10 +129,7 @@ impl RPCClient {
                 .get("host")
                 .ok_or_else(|| Error::InitSettingsMissing("host".to_string()))?
                 .to_owned();
-            let verify_cache = map
-                .get("verify_cache")
-                .and_then(|s| s.parse().ok())
-                .unwrap_or(false);
+            let verify_cache = map.get("verify_cache").and_then(|s| s.parse().ok()).unwrap_or(false);
             let static_range = map
                 .get("static_ranges")
                 .map(|s| s.split(';').map(|s| s.to_string()).collect())
@@ -158,6 +155,7 @@ impl RPCClient {
         self.reqwest
             .get(self.build_url("get_cert", "", None))
             .send()
+            .and_then(|res| async { res.error_for_status() })
             .and_then(|res| res.bytes())
             .await
             .ok()
@@ -427,8 +425,8 @@ The program will now terminate.
             .get(url)
             .timeout(Duration::from_secs(600))
             .send()
-            .map_ok(|res| res.text())
-            .try_flatten()
+            .and_then(|res| async { res.error_for_status() })
+            .and_then(|res| res.text())
             .await
     }
 

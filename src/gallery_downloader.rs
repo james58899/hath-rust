@@ -256,7 +256,13 @@ impl GalleryDownloader {
 
     async fn download<P: AsRef<Path>>(&self, url: Url, path: P, hash: Option<[u8; 20]>) -> Result<(), BoxError> {
         let mut file = fs::File::create(&path).await?;
-        let mut stream = self.reqwest.get(url).send().await.map(|r| r.bytes_stream())?;
+        let mut stream = self
+            .reqwest
+            .get(url)
+            .send()
+            .await
+            .and_then(|r| r.error_for_status())
+            .map(|r| r.bytes_stream())?;
         let mut hasher = Sha1::new();
         while let Some(bytes) = stream.next().await {
             let bytes = &bytes?;

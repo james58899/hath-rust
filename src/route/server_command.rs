@@ -87,7 +87,7 @@ async fn servercmd(
                 requests.push(tokio::spawn(async move {
                     for retry in 0..3 {
                         let request = reqwest.get(url.clone()).header(CONNECTION, HeaderValue::from_static("Close"));
-                        match request.send().await {
+                        match request.send().await.and_then(|r| r.error_for_status()) {
                             Ok(res) => {
                                 let start = Instant::now();
 

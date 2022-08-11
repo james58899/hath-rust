@@ -113,7 +113,7 @@ async fn hath(
 
                             let mut download = 0;
                             let request = data.reqwest.get(&source).timeout(Duration::from_secs(300));
-                            if let Ok(mut stream) = request.send().await.map(|r| r.bytes_stream()) {
+                            if let Ok(mut stream) = request.send().await.and_then(|r| r.error_for_status()).map(|r| r.bytes_stream()) {
                                 while let Some(bytes) = stream.next().await {
                                     let bytes = match &bytes {
                                         Ok(it) => it,
