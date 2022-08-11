@@ -309,23 +309,49 @@ fn create_ssl_acceptor(cert: &ParsedPkcs12) -> SslAcceptorBuilder {
     builder.clear_options(SslOptions::NO_TLSV1_3);
     builder.set_options(SslOptions::NO_RENEGOTIATION | SslOptions::ENABLE_MIDDLEBOX_COMPAT);
 
+    // From https://wiki.mozilla.org/Security/Server_Side_TLS#Old_backward_compatibility
     cpufeatures::new!(cpuid_aes, "aes");
     if !cpuid_aes::get() {
+        // Not have AES hardware acceleration, perfer ChaCha20.
         builder
             .set_cipher_list(
                 "ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:\
-            ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:\
-            ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:\
-            DHE-RSA-CHACHA20-POLY1305:DHE-RSA-AES128-GCM-SHA256:DHE-RSA-AES256-GCM-SHA384:\
-            ECDHE-ECDSA-AES128-SHA256:ECDHE-RSA-AES128-SHA256:ECDHE-ECDSA-AES128-SHA:ECDHE-RSA-AES128-SHA:\
-            ECDHE-ECDSA-AES256-SHA384:ECDHE-RSA-AES256-SHA384:ECDHE-ECDSA-AES256-SHA:ECDHE-RSA-AES256-SHA:\
-            DHE-RSA-AES128-SHA256:DHE-RSA-AES256-SHA256:\
-            AES128-GCM-SHA256:AES256-GCM-SHA384:AES128-SHA256:AES256-SHA256:AES128-SHA:AES256-SHA:\
-            DES-CBC3-SHA",
+                ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:\
+                ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:\
+                DHE-RSA-CHACHA20-POLY1305:DHE-RSA-AES128-GCM-SHA256:DHE-RSA-AES256-GCM-SHA384:\
+                ECDHE-ECDSA-AES128-SHA256:ECDHE-RSA-AES128-SHA256:\
+                ECDHE-ECDSA-AES128-SHA:ECDHE-RSA-AES128-SHA:\
+                ECDHE-ECDSA-AES256-SHA384:ECDHE-RSA-AES256-SHA384:\
+                ECDHE-ECDSA-AES256-SHA:ECDHE-RSA-AES256-SHA:\
+                DHE-RSA-AES128-SHA256:DHE-RSA-AES256-SHA256:\
+                AES128-GCM-SHA256:AES256-GCM-SHA384:AES128-SHA256:AES256-SHA256:AES128-SHA:AES256-SHA:\
+                DES-CBC3-SHA",
             )
             .unwrap();
         builder
             .set_ciphersuites("TLS_CHACHA20_POLY1305_SHA256:TLS_AES_128_GCM_SHA256:TLS_AES_256_GCM_SHA384")
+            .unwrap();
+    } else {
+        // Prioritize ChaCha ciphers when preferred by clients.
+        builder.set_options(SslOptions::PRIORITIZE_CHACHA);
+
+        builder
+            .set_cipher_list(
+                "ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:\
+                ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:\
+                ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:\
+                DHE-RSA-AES128-GCM-SHA256:DHE-RSA-AES256-GCM-SHA384:DHE-RSA-CHACHA20-POLY1305:\
+                ECDHE-ECDSA-AES128-SHA256:ECDHE-RSA-AES128-SHA256:\
+                ECDHE-ECDSA-AES128-SHA:ECDHE-RSA-AES128-SHA:\
+                ECDHE-ECDSA-AES256-SHA384:ECDHE-RSA-AES256-SHA384:\
+                ECDHE-ECDSA-AES256-SHA:ECDHE-RSA-AES256-SHA:\
+                DHE-RSA-AES128-SHA256:DHE-RSA-AES256-SHA256:\
+                AES128-GCM-SHA256:AES256-GCM-SHA384:AES128-SHA256:AES256-SHA256:AES128-SHA:AES256-SHA:\
+                DES-CBC3-SHA",
+            )
+            .unwrap();
+        builder
+            .set_ciphersuites("TLS_AES_128_GCM_SHA256:TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256")
             .unwrap();
     }
     builder.set_private_key(&cert.pkey).unwrap();
