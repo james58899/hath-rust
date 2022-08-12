@@ -263,23 +263,24 @@ The program will now terminate.
         None
     }
 
-    pub async fn dl_fails(&self, failures: Vec<&str>) {
+    pub async fn dl_fails<T: AsRef<str>>(&self, failures: Vec<T>) {
         if failures.is_empty() {
             return;
         }
 
-        let failcount = failures.len();
+        let list: Vec<&str> = if failures.len() > 50 {
+            // Random report 50 failures
+            let mut rng = rand::thread_rng();
+            failures.choose_multiple(&mut rng, 50).map(|s| s.as_ref()).collect()
+        } else {
+            failures.iter().map(|s| s.as_ref()).collect()
+        };
 
-        if !(1..=50).contains(&failcount) {
-            // if we're getting a lot of distinct failures, it's probably a problem with this client
-            return;
-        }
-
-        let srv_res = self.send_action("dlfails", Some(&failures.join(";"))).await;
+        let srv_res = self.send_action("dlfails", Some(&list.join(";"))).await;
 
         debug!(
             "Reported {} download failures with response {}.",
-            failcount,
+            list.len(),
             if srv_res.is_ok() { "OK" } else { "Fail" }
         );
     }

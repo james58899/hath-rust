@@ -134,7 +134,7 @@ impl GalleryDownloader {
                         error!("Could not write galleryinfo.txt: {}", e);
                     }
 
-                    self.client.dl_fails(meta.failures.iter().map(|s| s.as_str()).collect()).await;
+                    self.client.dl_fails(meta.failures.iter().collect()).await;
                     break 'retry;
                 }
             }
