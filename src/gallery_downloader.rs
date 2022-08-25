@@ -57,7 +57,12 @@ impl GalleryDownloader {
             };
 
             let dir = self.download_dir.join(if meta.title.len() > 100 {
-                format!("{}... [{}{}]", &meta.title[..97], meta.gid, meta.xres_title)
+                let mut truncate_pos = 97;
+                // Align unicode char boundary
+                while !meta.title.is_char_boundary(truncate_pos) && truncate_pos != 0 {
+                    truncate_pos = truncate_pos.saturating_sub(1);
+                }
+                format!("{}... [{}{}]", &meta.title[..truncate_pos], meta.gid, meta.xres_title)
             } else {
                 format!("{} [{}{}]", meta.title, meta.gid, meta.xres_title)
             });
