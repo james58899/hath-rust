@@ -53,7 +53,7 @@ dependencies = [
  "actix-service",
  "actix-tls",
  "actix-utils",
- "ahash",
+ "ahash 0.7.6",
  "base64",
  "bitflags",
  "bytes",
@@ -184,7 +184,7 @@ dependencies = [
  "actix-tls",
  "actix-utils",
  "actix-web-codegen",
- "ahash",
+ "ahash 0.7.6",
  "bytes",
  "bytestring",
  "cfg-if",
@@ -222,9 +222,9 @@ dependencies = [
 
 [[package]]
 name = "actix-web-lab"
-version = "0.17.0"
+version = "0.18.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e685bb63b29ddb0d5fe646d799a7fc7661876d4fed91c0a07eb2b6e6dbed95ba"
+checksum = "eb6e701cf87d1d862fc47c2c1daecc774e47c3651db7a9514707dcc6b8b23eb6"
 dependencies = [
  "actix-files",
  "actix-http",
@@ -233,7 +233,7 @@ dependencies = [
  "actix-utils",
  "actix-web",
  "actix-web-lab-derive",
- "ahash",
+ "ahash 0.8.0",
  "arc-swap",
  "async-trait",
  "bytes",
@@ -291,6 +291,18 @@ version = "0.7.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fcb51a0695d8f838b1ee009b3fbf66bda078cd64590202a864a8f3e8c4315c47"
 dependencies = [
+ "getrandom",
+ "once_cell",
+ "version_check",
+]
+
+[[package]]
+name = "ahash"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "57e6e951cfbb2db8de1828d49073a113a29fd7117b1596caa781a258c7e38d72"
+dependencies = [
+ "cfg-if",
  "getrandom",
  "once_cell",
  "version_check",
