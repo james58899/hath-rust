@@ -10,7 +10,7 @@ actix-web = { version = "4.1", default-features = false, features = ["macros", "
 actix-web-lab = "0.17"
 async-stream = "0.3"
 chrono = "0.4"
-clap = { version = "3.2", features = ["derive"] }
+clap = { version = "4.0", features = ["derive"] }
 cpufeatures = "0.2"
 filesize = "0.2"
 filetime = "0.2"
