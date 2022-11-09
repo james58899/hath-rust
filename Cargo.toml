@@ -7,10 +7,9 @@ edition = "2021"
 actix-files = "0.6"
 actix-tls = { version = "*", default-features = false, features = ["accept"] }
 actix-web = { version = "4.1", default-features = false, features = ["macros", "openssl"] }
-actix-web-lab = "0.17"
+actix-web-lab = "0.18"
 async-stream = "0.3"
 chrono = "0.4"
-clap = { version = "3.2", features = ["derive"] }
 cpufeatures = "0.2"
 filesize = "0.2"
 filetime = "0.2"
@@ -32,10 +31,6 @@ tokio-stream = { version = "0.1", default-features = false, features = ["fs"] }
 [build-dependencies]
 openssl-src = { version = "*", features = ["weak-crypto"] }
 
-[patch.crates-io]
-openssl = { git = "https://github.com/sfackler/rust-openssl" }
-openssl-src = { git = 'https://github.com/alexcrichton/openssl-src-rs', branch = "release/111" }
-openssl-sys = { git = 'https://github.com/sfackler/rust-openssl' }
-
 [profile.release]
 lto = true
+strip = true
