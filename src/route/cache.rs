@@ -44,8 +44,8 @@ async fn hath(
     let xres = additional.get("xres").map(|s| s.as_str()).unwrap_or("");
 
     // keystamp check
-    let time = keystamp.get(0).unwrap_or(&"");
-    let hash = keystamp.get(1).unwrap_or(&"");
+    let time = keystamp.first().unwrap_or(&"");
+    let hash = keystamp.last().unwrap_or(&"");
     let time_diff = &(data.rpc.get_timestemp() - time.parse::<i64>().unwrap_or_default());
     let hash_string = format!("{}-{}-{}-hotlinkthis", time, file_id, data.key);
     if time.is_empty() || hash.is_empty() || !TTL.contains(time_diff) || !string_to_hash(hash_string).starts_with(hash) {
