@@ -6,7 +6,7 @@ edition = "2021"
 [dependencies]
 actix-files = "0.6"
 actix-tls = { version = "*", default-features = false, features = ["accept"] }
-actix-web = { version = "4.1", default-features = false, features = ["macros", "openssl"] }
+actix-web = { version = "4.2", default-features = false, features = ["macros", "openssl"] }
 actix-web-lab = "0.18"
 async-stream = "0.3"
 chrono = "0.4"
