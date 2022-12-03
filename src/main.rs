@@ -19,7 +19,7 @@ use actix_web::{
 };
 use clap::Parser;
 use futures::TryFutureExt;
-use log::{error, info};
+use log::{error, info, warn};
 use mimalloc::MiMalloc;
 use openssl::{
     asn1::Asn1Time,
@@ -97,10 +97,11 @@ struct AppState {
     command_channel: Sender<Command>,
 }
 
-enum Command {
+pub enum Command {
     ReloadCert,
     RefreshSettings,
     StartDownloader,
+    Overload,
 }
 
 #[tokio::main]
@@ -183,6 +184,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let downloader = Arc::new(Mutex::new(None));
     let downloader2 = downloader.clone();
     tokio::spawn(async move {
+        let mut last_overload = Instant::now();
         while let Some(command) = rx.recv().await {
             match command {
                 Command::ReloadCert => {
@@ -204,6 +206,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
                             new.run().await;
                             *downloader3.lock() = None;
                         }))
+                    }
+                }
+                Command::Overload => {
+                    if last_overload.elapsed() > Duration::from_secs(30) {
+                        last_overload = Instant::now();
+                        warn!("Server overloaded!");
+                        // TODO notify overload
+                        // client2.notify_overload().await;
                     }
                 }
             }
@@ -275,6 +285,7 @@ async fn read_credential<P: AsRef<Path>>(data_path: P) -> Option<(i32, String)> 
 }
 
 fn create_server(port: u16, cert: ParsedPkcs12, data: AppState) -> (actix_web::dev::Server, watch::Sender<ParsedPkcs12>) {
+    let connection_counter = middleware::ConnectionCounter::new(data.rpc.settings(), data.command_channel.clone());
     let app_data = Data::new(data);
     let logger = middleware::Logger::default();
     let (tx, mut rx) = watch::channel(cert);
@@ -299,6 +310,7 @@ fn create_server(port: u16, cert: ParsedPkcs12, data: AppState) -> (actix_web::d
             App::new()
                 .app_data(app_data.clone())
                 .wrap(logger.clone())
+                .wrap(connection_counter.clone())
                 .wrap(DefaultHeaders::new().add((
                     header::SERVER,
                     format!("Genetic Lifeform and Distributed Open Server {}", CLIENT_VERSION),

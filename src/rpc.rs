@@ -7,7 +7,7 @@ use std::{
         Arc,
     },
     time::{Duration, Instant},
-    vec,
+    vec, cmp::min,
 };
 
 use chrono::{TimeZone, Utc};
@@ -42,6 +42,7 @@ pub struct RPCClient {
 
 pub struct Settings {
     size_limit: AtomicU64,
+    throttle_bytes: AtomicU64
 }
 
 pub struct InitSettings {
@@ -75,9 +76,17 @@ impl Settings {
         self.size_limit.load(Ordering::Relaxed)
     }
 
+    pub fn max_connection(&self) -> u64 {
+        20 + min(480, self.throttle_bytes.load(Ordering::Relaxed) / 10000)
+    }
+
     fn update(&self, settings: HashMap<String, String>) {
         if let Some(size) = settings.get("disklimit_bytes").and_then(|s| s.parse().ok()) {
             self.size_limit.store(size, Ordering::Relaxed);
+        }
+
+        if let Some(size) = settings.get("throttle_bytes").and_then(|s| s.parse().ok()) {
+            self.throttle_bytes.store(size, Ordering::Relaxed);
         }
 
         // TODO update other settings
@@ -96,6 +105,7 @@ impl RPCClient {
             running: AtomicBool::new(false),
             settings: Arc::new(Settings {
                 size_limit: AtomicU64::new(u64::MAX),
+                throttle_bytes: AtomicU64::new(0)
             }),
         }
     }
@@ -341,6 +351,10 @@ The program will now terminate.
         } else {
             warn!("Failed to connect to the server for the stillAlive test. This is probably a temporary connection problem.");
         }
+    }
+
+    pub async fn notify_overload(&self) {
+        let _ = self.send_action("overload", None).await;
     }
 
     async fn check_stat(&self) -> Result<Option<(i32, i32)>, Error> {
