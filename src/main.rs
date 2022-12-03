@@ -285,59 +285,57 @@ async fn read_credential<P: AsRef<Path>>(data_path: P) -> Option<(i32, String)> 
 }
 
 fn create_server(port: u16, cert: ParsedPkcs12, data: AppState) -> (actix_web::dev::Server, watch::Sender<ParsedPkcs12>) {
+    let logger = middleware::Logger::default();
     let connection_counter = middleware::ConnectionCounter::new(data.rpc.settings(), data.command_channel.clone());
     let app_data = Data::new(data);
-    let logger = middleware::Logger::default();
-    let (tx, mut rx) = watch::channel(cert);
-    let ssl_context = Arc::new(RwLock::new(create_ssl_acceptor(&rx.borrow_and_update()).build()));
-    let ssl_context_write = ssl_context.clone();
 
-    let mut ssl_acceptor = create_ssl_acceptor(&rx.clone().borrow_and_update());
+    // Cert changer
+    let (cert_sender, mut cert_receiver) = watch::channel(cert);
+    let ssl_context = Arc::new(RwLock::new(create_ssl_acceptor(&cert_receiver.borrow_and_update()).build()));
+    let ssl_context_write = ssl_context.clone();
+    let mut ssl_acceptor = create_ssl_acceptor(&cert_receiver.clone().borrow_and_update());
     ssl_acceptor.set_client_hello_callback(move |ssl, _alert| {
         ssl.set_ssl_context(ssl_context.read().context())?;
         Ok(ClientHelloResponse::SUCCESS)
     });
-
-    // Cert changer
     tokio::spawn(async move {
-        while rx.changed().await.is_ok() {
-            *ssl_context_write.write() = create_ssl_acceptor(&rx.borrow()).build();
+        while cert_receiver.changed().await.is_ok() {
+            *ssl_context_write.write() = create_ssl_acceptor(&cert_receiver.borrow()).build();
         }
     });
 
-    (
-        HttpServer::new(move || {
-            App::new()
-                .app_data(app_data.clone())
-                .wrap(logger.clone())
-                .wrap(connection_counter.clone())
-                .wrap(DefaultHeaders::new().add((
-                    header::SERVER,
-                    format!("Genetic Lifeform and Distributed Open Server {}", CLIENT_VERSION),
-                )))
-                .wrap_fn(|req, next| {
-                    next.call(req).map_ok(|mut res| {
-                        let head = res.response_mut().head_mut();
-                        head.set_connection_type(ConnectionType::Close);
-                        head.set_camel_case_headers(true);
-                        res
-                    })
+    let server = HttpServer::new(move || {
+        App::new()
+            .app_data(app_data.clone())
+            .wrap(logger.clone())
+            .wrap(connection_counter.clone())
+            .wrap(DefaultHeaders::new().add((
+                header::SERVER,
+                format!("Genetic Lifeform and Distributed Open Server {}", CLIENT_VERSION),
+            )))
+            .wrap_fn(|req, next| {
+                next.call(req).map_ok(|mut res| {
+                    let head = res.response_mut().head_mut();
+                    head.set_connection_type(ConnectionType::Close);
+                    head.set_camel_case_headers(true);
+                    res
                 })
-                .default_service(to(route::default))
-                .configure(route::configure)
-        })
-        .disable_signals()
-        .client_request_timeout(Duration::from_secs(15))
-        .on_connect(|conn, _ext| {
-            if let Some(tcp) = conn.downcast_ref::<TlsStream<TcpStream>>() {
-                tcp.get_ref().set_nodelay(true).unwrap();
-            }
-        })
-        .bind_openssl(SocketAddrV4::new(Ipv4Addr::new(0, 0, 0, 0), port), ssl_acceptor)
-        .unwrap()
-        .run(),
-        tx,
-    )
+            })
+            .default_service(to(route::default))
+            .configure(route::configure)
+    })
+    .disable_signals()
+    .client_request_timeout(Duration::from_secs(15))
+    .on_connect(|conn, _ext| {
+        if let Some(tcp) = conn.downcast_ref::<TlsStream<TcpStream>>() {
+            tcp.get_ref().set_nodelay(true).unwrap();
+        }
+    })
+    .bind_openssl(SocketAddrV4::new(Ipv4Addr::new(0, 0, 0, 0), port), ssl_acceptor)
+    .unwrap()
+    .run();
+
+    (server, cert_sender)
 }
 
 fn create_ssl_acceptor(cert: &ParsedPkcs12) -> SslAcceptorBuilder {
