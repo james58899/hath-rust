@@ -313,7 +313,7 @@ The program will now terminate.
                     page,
                     fileindex,
                     xres,
-                    if force_image_server { 1 } else { 0 }
+                    u8::from(force_image_server)
                 )),
             )
             .await
