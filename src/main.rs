@@ -71,10 +71,10 @@ struct AppState {
     rpc: Arc<RPCClient>,
     download_state: DownloadState,
     cache_manager: Arc<CacheManager>,
-    command_channel: Sender<COMMAND>,
+    command_channel: Sender<Command>,
 }
 
-enum COMMAND {
+enum Command {
     ReloadCert,
     RefreshSettings,
     StartDownloader,
@@ -107,7 +107,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let cache_manager = CacheManager::new(cache_dir, temp_dir, settings.clone(), &init_settings, shutdown_send.clone()).await?;
 
     // command channel
-    let (tx, mut rx) = mpsc::channel::<COMMAND>(1);
+    let (tx, mut rx) = mpsc::channel::<Command>(1);
     let cert = client.get_cert().await.unwrap();
     if cert.cert.not_after() < Asn1Time::days_from_now(1).unwrap() {
         error!(
@@ -161,17 +161,17 @@ async fn main() -> Result<(), Box<dyn Error>> {
     tokio::spawn(async move {
         while let Some(command) = rx.recv().await {
             match command {
-                COMMAND::ReloadCert => {
+                Command::ReloadCert => {
                     if let Some(cert) = client2.get_cert().await {
                         if cert_changer.send(cert).is_err() {
                             error!("Update SSL Cert fail");
                         }
                     }
                 }
-                COMMAND::RefreshSettings => {
+                Command::RefreshSettings => {
                     client2.refresh_settings().await;
                 }
-                COMMAND::StartDownloader => {
+                Command::StartDownloader => {
                     let mut downloader = downloader2.lock();
                     if downloader.is_none() {
                         let new = GalleryDownloader::new(client2.clone(), download_dir);

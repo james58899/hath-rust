@@ -13,7 +13,7 @@ use reqwest::{
 use crate::{
     route::{forbidden, parse_additional, speed_test::random_response},
     util::string_to_hash,
-    AppState, COMMAND, MAX_KEY_TIME_DRIFT,
+    AppState, Command, MAX_KEY_TIME_DRIFT,
 };
 
 #[route("/servercmd/{command}/{additional:[^/]*}/{time}/{key}", method = "GET", method = "HEAD")]
@@ -132,15 +132,15 @@ async fn servercmd(
                 .unwrap_or(1000000),
         ),
         "refresh_settings" => {
-            let _ = data.command_channel.send(COMMAND::RefreshSettings).await; // Ignore error
+            let _ = data.command_channel.send(Command::RefreshSettings).await; // Ignore error
             HttpResponse::Ok().finish()
         }
         "start_downloader" => {
-            let _ = data.command_channel.send(COMMAND::StartDownloader).await; // Ignore error
+            let _ = data.command_channel.send(Command::StartDownloader).await; // Ignore error
             HttpResponse::Ok().finish()
         }
         "refresh_certs" => {
-            let _ = data.command_channel.send(COMMAND::ReloadCert).await; // Ignore error
+            let _ = data.command_channel.send(Command::ReloadCert).await; // Ignore error
             HttpResponse::Ok().finish()
         }
         _ => HttpResponse::Ok().body("INVALID_COMMAND"),
