@@ -17,6 +17,7 @@ use actix_web::{
     web::{to, Data},
     App, HttpServer,
 };
+use clap::Parser;
 use futures::TryFutureExt;
 use log::{error, info};
 use mimalloc::MiMalloc;
@@ -63,6 +64,28 @@ static GLOBAL: MiMalloc = MiMalloc;
 static CLIENT_VERSION: &str = "1.6.1";
 static MAX_KEY_TIME_DRIFT: RangeInclusive<i64> = -300..=300;
 
+#[derive(Parser)]
+struct Args {
+    // Overrides the port set in the client's settings.
+    #[arg(long)]
+    port: Option<u16>,
+
+    #[arg(long)]
+    cache_dir: Option<String>,
+
+    #[arg(long)]
+    data_dir: Option<String>,
+
+    #[arg(long)]
+    download_dir: Option<String>,
+
+    #[arg(long)]
+    log_dir: Option<String>,
+
+    #[arg(long)]
+    temp_dir: Option<String>,
+}
+
 struct AppState {
     runtime: Handle,
     reqwest: reqwest::Client,
@@ -82,14 +105,15 @@ enum Command {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
-    // TODO read args
-    let data_dir = "./data";
-    let log_dir = "./log";
-    let cache_dir = "./cache";
-    let temp_dir = "./tmp";
-    let download_dir = "./download";
+    let args = Args::parse();
 
-    create_dirs(vec![data_dir, log_dir, cache_dir, temp_dir, download_dir]).await?;
+    let cache_dir = args.cache_dir.unwrap_or_else(|| "./cache".to_string());
+    let data_dir = args.data_dir.unwrap_or_else(|| "./data".to_string());
+    let download_dir = args.download_dir.unwrap_or_else(|| "./download".to_string());
+    let log_dir = args.log_dir.unwrap_or_else(|| "./log".to_string());
+    let temp_dir = args.temp_dir.unwrap_or_else(|| "./tmp".to_string());
+
+    create_dirs(vec![&data_dir, &log_dir, &cache_dir, &temp_dir, &download_dir]).await?;
 
     init_logger();
 
@@ -117,7 +141,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     }
 
     let (server, cert_changer) = create_server(
-        init_settings.client_port(),
+        args.port.unwrap_or_else(|| init_settings.client_port()),
         cert,
         AppState {
             runtime: Handle::current(),
@@ -174,7 +198,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 Command::StartDownloader => {
                     let mut downloader = downloader2.lock();
                     if downloader.is_none() {
-                        let new = GalleryDownloader::new(client2.clone(), download_dir);
+                        let new = GalleryDownloader::new(client2.clone(), &download_dir);
                         let downloader3 = downloader2.clone();
                         *downloader = Some(tokio::spawn(async move {
                             new.run().await;
@@ -237,8 +261,8 @@ fn init_logger() {
     logger::init().unwrap();
 }
 
-async fn read_credential(data_path: &str) -> Option<(i32, String)> {
-    let path = Path::new(data_path).join("client_login");
+async fn read_credential<P: AsRef<Path>>(data_path: P) -> Option<(i32, String)> {
+    let path = data_path.as_ref().join("client_login");
     let mut file = File::open(path.clone()).map_ok(|f| BufReader::new(f).lines()).await.ok()?; // TODO better error handle
     let data = file.next_line().await.ok().flatten()?;
     let mut credential = data.split('-');
