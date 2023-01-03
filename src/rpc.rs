@@ -273,7 +273,7 @@ The program will now terminate.
         None
     }
 
-    pub async fn dl_fails<T: AsRef<str>>(&self, failures: Vec<T>) {
+    pub async fn dl_fails<T: AsRef<str>>(&self, failures: &Vec<T>) {
         if failures.is_empty() {
             return;
         }
@@ -295,7 +295,7 @@ The program will now terminate.
         );
     }
 
-    pub async fn fetch_queue(&self, gallery: Option<GalleryMeta>) -> Option<Vec<String>> {
+    pub async fn fetch_queue(&self, gallery: Option<&GalleryMeta>) -> Option<Vec<String>> {
         let additional = &gallery.map(|s| format!("{};{}", s.gid(), s.minxres())).unwrap_or_default();
         let url = self.build_url("fetchqueue", additional, Some("dl"));
         if let Ok(res) = self.send_request(url).await {

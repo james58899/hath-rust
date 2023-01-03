@@ -9,17 +9,21 @@ use futures::StreamExt;
 use hex::FromHex;
 use log::{debug, error, info, warn};
 use openssl::sha::Sha1;
+use parking_lot::Mutex;
 use regex::Regex;
 use reqwest::Url;
 use tokio::{
     fs::{self, create_dir_all},
     io::{AsyncReadExt, AsyncWriteExt},
+    sync::Semaphore,
     time::{sleep, sleep_until, Instant},
 };
 
 use crate::{error::Error, rpc::RPCClient, util};
 
 type BoxError = Box<dyn std::error::Error + Send + Sync>;
+
+static MAX_DOWNLOAD_TASK: u32 = 4;
 
 pub struct GalleryDownloader {
     client: Arc<RPCClient>,
@@ -44,8 +48,8 @@ impl GalleryDownloader {
                 break;
             }
 
-            let mut meta = match meta {
-                Ok(meta) => meta,
+            let meta = match meta {
+                Ok(meta) => Arc::new(meta),
                 Err(e) => {
                     warn!("Failed to parse metadata for new gallery. {}", e);
 
@@ -74,20 +78,22 @@ impl GalleryDownloader {
                 }
             }
 
-            let mut downloaded_files = HashSet::new();
+            let downloaded_files = Arc::new(Mutex::new(HashSet::new()));
             'retry: for retry in 0..10 {
+                let semaphore = Arc::new(Semaphore::new(MAX_DOWNLOAD_TASK as usize));
                 for info in &meta.gallery_files {
+                    let info = info.clone();
                     if !self.client.is_running() {
                         break 'task;
                     }
 
                     // Check if file already downloaded
-                    if downloaded_files.contains(info) {
+                    if downloaded_files.lock().contains(&info) {
                         continue;
                     }
                     let path = dir.join(format!("{}.{}", info.filename, info.filetype));
                     if info.check_hash(&path).await {
-                        downloaded_files.insert(info);
+                        downloaded_files.lock().insert(info);
                         continue;
                     }
 
@@ -101,24 +107,31 @@ impl GalleryDownloader {
                     {
                         Some(url) => {
                             start_time = Instant::now();
-                            match self.download(url.clone(), &path, info.expected_sha1_hash).await {
-                                Ok(_) => {
-                                    info!(
-                                        "Finished downloading gid={} page={}: {}.{}",
-                                        meta.gid, info.page, info.filename, info.filetype
-                                    );
-                                    downloaded_files.insert(info);
-                                }
-                                Err(err) => {
-                                    warn!("Gallery file download error: {}", err);
+                            let permit = semaphore.clone().acquire_owned().await.expect("Semaphore closed");
+                            let meta = meta.clone();
+                            let downloaded_files = downloaded_files.clone();
+                            let reqwest = self.reqwest.clone();
+                            tokio::spawn(async move {
+                                for retry in 0..3 {
+                                    if let Err(err) = download(reqwest.clone(), url.clone(), &path, info.expected_sha1_hash).await {
+                                        warn!("Gallery file download error: {}", err);
 
-                                    if err.is::<reqwest::Error>() || err.is::<Error>() {
-                                        if let Some(host) = url.host_str() {
-                                            meta.failures.push(format!("{}-{}-{}", host, info.fileindex, info.xres))
+                                        if retry == 2 && (err.is::<reqwest::Error>() || err.is::<Error>()) {
+                                            if let Some(host) = url.host_str() {
+                                                meta.failures.lock().push(format!("{}-{}-{}", host, info.fileindex, info.xres))
+                                            }
                                         }
+                                    } else {
+                                        info!(
+                                            "Finished downloading gid={} page={}: {}.{}",
+                                            meta.gid, info.page, info.filename, info.filetype
+                                        );
+                                        downloaded_files.lock().insert(info);
+                                        break;
                                     }
                                 }
-                            }
+                                drop(permit);
+                            });
                         }
                         None => {
                             warn!(
@@ -128,27 +141,29 @@ impl GalleryDownloader {
                         }
                     };
 
-                    // Wait 1s before next download, or 5s if download not success
-                    sleep_until(start_time + Duration::from_secs(if downloaded_files.contains(info) { 1 } else { 5 })).await;
+                    sleep_until(start_time + Duration::from_secs(1)).await;
                 }
 
-                if downloaded_files.len() == meta.filecount {
+                drop(semaphore.acquire_many(MAX_DOWNLOAD_TASK).await); // Wait all task done
+
+                if downloaded_files.lock().len() == meta.filecount {
                     info!("Finished download of gallery: {}", meta.title);
 
                     if let Err(e) = fs::write(&dir.join("galleryinfo.txt"), &meta.information).await {
                         error!("Could not write galleryinfo.txt: {}", e);
                     }
 
-                    self.client.dl_fails(meta.failures.iter().collect()).await;
+                    let failures = meta.failures.lock().clone();
+                    self.client.dl_fails(&failures).await;
                     break 'retry;
                 }
             }
 
-            if downloaded_files.len() != meta.filecount {
+            if downloaded_files.lock().len() != meta.filecount {
                 warn!("Permanently failed downloading gallery: {}", meta.title);
             }
 
-            task = self.client.fetch_queue(Some(meta)).await.map(GalleryDownloader::parser);
+            task = self.client.fetch_queue(Some(&meta)).await.map(GalleryDownloader::parser);
         }
     }
 
@@ -161,7 +176,7 @@ impl GalleryDownloader {
         let mut xres_title = String::new();
         let mut title = String::new();
         let mut information = String::new();
-        let mut gallery_files: Vec<GalleryFile> = Vec::new();
+        let mut gallery_files: Vec<Arc<GalleryFile>> = Vec::new();
 
         let mut parse_state = 0;
         for s in raw_gallery {
@@ -233,14 +248,14 @@ impl GalleryDownloader {
                 let filetype = split[4].to_string();
                 let filename = split[5].to_string();
 
-                gallery_files.push(GalleryFile {
+                gallery_files.push(Arc::new(GalleryFile {
                     page,
                     fileindex,
                     xres,
                     expected_sha1_hash: sha1hash,
                     filetype,
                     filename,
-                })
+                }))
             } else {
                 // Gallery info
                 information += &(s + "\n");
@@ -255,35 +270,34 @@ impl GalleryDownloader {
             title,
             information,
             gallery_files,
-            failures: vec![],
+            failures: Mutex::new(vec![]),
         })
     }
+}
 
-    async fn download<P: AsRef<Path>>(&self, url: Url, path: P, hash: Option<[u8; 20]>) -> Result<(), BoxError> {
-        let mut file = fs::File::create(&path).await?;
-        let mut stream = self
-            .reqwest
-            .get(url)
-            .send()
-            .await
-            .and_then(|r| r.error_for_status())
-            .map(|r| r.bytes_stream())?;
-        let mut hasher = Sha1::new();
-        while let Some(bytes) = stream.next().await {
-            let bytes = &bytes?;
-            file.write_all(bytes).await?;
-            hasher.update(bytes);
-        }
-
-        if let Some(expected) = hash {
-            let hash = hasher.finish();
-            if hash != expected {
-                return Err(Box::new(Error::HashMismatch { expected, actual: hash }));
-            }
-        }
-
-        Ok(())
+async fn download<P: AsRef<Path>>(reqwest: reqwest::Client, url: Url, path: P, hash: Option<[u8; 20]>) -> Result<(), BoxError> {
+    let mut file = fs::File::create(&path).await?;
+    let mut stream = reqwest
+        .get(url)
+        .send()
+        .await
+        .and_then(|r| r.error_for_status())
+        .map(|r| r.bytes_stream())?;
+    let mut hasher = Sha1::new();
+    while let Some(bytes) = stream.next().await {
+        let bytes = &bytes?;
+        file.write_all(bytes).await?;
+        hasher.update(bytes);
     }
+
+    if let Some(expected) = hash {
+        let hash = hasher.finish();
+        if hash != expected {
+            return Err(Box::new(Error::HashMismatch { expected, actual: hash }));
+        }
+    }
+
+    Ok(())
 }
 
 #[derive(Hash, Eq, PartialEq)]
@@ -335,8 +349,8 @@ pub struct GalleryMeta {
     xres_title: String,
     title: String,
     information: String,
-    gallery_files: Vec<GalleryFile>,
-    failures: Vec<String>,
+    gallery_files: Vec<Arc<GalleryFile>>,
+    failures: Mutex<Vec<String>>,
 }
 
 impl GalleryMeta {
