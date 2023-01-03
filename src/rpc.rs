@@ -133,7 +133,7 @@ impl RPCClient {
             let static_range = map
                 .get("static_ranges")
                 .map(|s| s.split(';').map(|s| s.to_string()).collect())
-                .ok_or_else(|| Error::InitSettingsMissing("static_ranges".to_string()))?;
+                .unwrap_or_default();
 
             self.update_settings(map);
 
@@ -307,14 +307,7 @@ The program will now terminate.
         if let Ok(res) = self
             .send_action(
                 "dlfetch",
-                Some(&format!(
-                    "{};{};{};{};{}",
-                    gid,
-                    page,
-                    fileindex,
-                    xres,
-                    u8::from(force_image_server)
-                )),
+                Some(&format!("{};{};{};{};{}", gid, page, fileindex, xres, u8::from(force_image_server))),
             )
             .await
         {
