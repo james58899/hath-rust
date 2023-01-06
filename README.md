@@ -20,7 +20,6 @@ Features that are included in the official and are working.
 ### Not works
 Included in the official release but not yet implemented.
 * Initialize client[^init]
-* Override port
 * Disable RPC IP check
 * Bandwidth limit
 * logging
