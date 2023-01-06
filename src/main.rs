@@ -184,7 +184,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let downloader = Arc::new(Mutex::new(None));
     let downloader2 = downloader.clone();
     tokio::spawn(async move {
-        let mut last_overload = Instant::now();
+        let mut last_overload = Instant::now().checked_sub(Duration::from_secs(30)).unwrap_or_else(Instant::now);
         while let Some(command) = rx.recv().await {
             match command {
                 Command::ReloadCert => {
@@ -212,8 +212,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     if last_overload.elapsed() > Duration::from_secs(30) {
                         last_overload = Instant::now();
                         warn!("Server overloaded!");
-                        // TODO notify overload
-                        // client2.notify_overload().await;
+                        client2.notify_overload().await;
                     }
                 }
             }
