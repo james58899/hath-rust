@@ -34,7 +34,7 @@ static TTL: RangeInclusive<i64> = -900..=900; // Token TTL 15 minutes
 #[route("/h/{fileid}/{additional}/{filename:.*}", method = "GET", method = "HEAD")]
 async fn hath(
     req: HttpRequest,
-    Path((file_id, additional, file_name)): Path<(String, String, String)>,
+    Path((file_id, additional, _file_name)): Path<(String, String, String)>,
     data: Data<AppState>,
 ) -> impl Responder {
     let additional = parse_additional(&additional);
@@ -56,7 +56,7 @@ async fn hath(
         if let Some(file) = data
             .cache_manager
             .get_file(&info)
-            .map(|f| async move { NamedFile::from_file(f?.into_std().await, &file_name).ok() })
+            .map(|f| async move { NamedFile::open_async(f?).await.ok() })
             .flatten()
             .await
         {

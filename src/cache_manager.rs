@@ -98,7 +98,7 @@ impl CacheManager {
         .unwrap()
     }
 
-    pub async fn get_file(&self, info: &CacheFileInfo) -> Option<File> {
+    pub async fn get_file(&self, info: &CacheFileInfo) -> Option<PathBuf> {
         let file = info.get_file(&self.cache_dir).await;
         if file.is_some() {
             self.mark_recently_accessed(info, true).await;
@@ -530,11 +530,11 @@ impl CacheFileInfo {
             .join(format!("{}-{}-{}-{}-{}", hash, self.size, self.xres, self.yres, self.mime_type))
     }
 
-    async fn get_file(&self, cache_dir: &Path) -> Option<File> {
+    async fn get_file(&self, cache_dir: &Path) -> Option<PathBuf> {
         let path = self.to_path(cache_dir);
         let metadata = metadata(&path).await;
         if metadata.is_ok() && metadata.unwrap().is_file() {
-            File::open(path).await.ok()
+            Some(path)
         } else {
             None
         }
