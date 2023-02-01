@@ -96,7 +96,7 @@ impl Settings {
 impl RPCClient {
     pub fn new(id: i32, key: &str) -> Self {
         Self {
-            api_base: RwLock::new(Url::parse(format!("http://{}/15/rpc?clientbuild={}", DEFAULT_SERVER, API_VERSION).as_str()).unwrap()),
+            api_base: RwLock::new(Url::parse(format!("http://{DEFAULT_SERVER}/15/rpc?clientbuild={API_VERSION}").as_str()).unwrap()),
             clock_offset: AtomicI64::new(0),
             id,
             key: key.to_string(),
@@ -263,7 +263,7 @@ The program will now terminate.
     }
 
     pub async fn sr_fetch(&self, file_index: &str, xres: &str, file_id: &str) -> Option<Vec<String>> {
-        let add = format!("{};{};{}", file_index, xres, file_id);
+        let add = format!("{file_index};{xres};{file_id}");
         if let Ok(res) = self.send_action("srfetch", Some(&add)).await {
             if res.is_ok() {
                 return Some(res.data);
@@ -324,7 +324,7 @@ The program will now terminate.
             if res.is_ok() {
                 return Some(res.data);
             } else {
-                panic!("Failed to request gallery file url for fileindex={}", fileindex);
+                panic!("Failed to request gallery file url for fileindex={fileindex}");
             }
         }
 

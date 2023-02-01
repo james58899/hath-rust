@@ -227,7 +227,7 @@ impl GalleryDownloader {
                         xres_title = if minxres == "org" {
                             String::new()
                         } else {
-                            format!("-{}x", minxres)
+                            format!("-{minxres}x")
                         };
                     }
                     _ => (),

@@ -26,10 +26,10 @@ impl fmt::Display for Error {
         match self {
             Error::CertExpired => write!(f, "Cert expired"),
             Error::VersionTooOld => write!(f, "Your client is too old to connect to the Hentai@Home Network."),
-            Error::ApiResponseFail { fail_code, message } => write!(f, "Code={}, Message={}", fail_code, message),
+            Error::ApiResponseFail { fail_code, message } => write!(f, "Code={fail_code}, Message={message}"),
             Error::ConnectTestFail => write!(f, "Connect test failed"),
-            Error::InitSettingsMissing(settings) => write!(f, "Missing init settings: {}", settings),
-            Error::HashMismatch { expected, actual } => write!(f, "Hash missmatch. Expected={:?}, Actual={:?}", expected, actual),
+            Error::InitSettingsMissing(settings) => write!(f, "Missing init settings: {settings}"),
+            Error::HashMismatch { expected, actual } => write!(f, "Hash missmatch. Expected={expected:?}, Actual={actual:?}"),
         }
     }
 }

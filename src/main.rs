@@ -310,7 +310,7 @@ fn create_server(port: u16, cert: ParsedPkcs12, data: AppState) -> (actix_web::d
             .wrap(connection_counter.clone())
             .wrap(DefaultHeaders::new().add((
                 header::SERVER,
-                format!("Genetic Lifeform and Distributed Open Server {}", CLIENT_VERSION),
+                format!("Genetic Lifeform and Distributed Open Server {CLIENT_VERSION}"),
             )))
             .wrap_fn(|req, next| {
                 next.call(req).map_ok(|mut res| {
