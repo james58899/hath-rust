@@ -20,6 +20,7 @@ use actix_web::{
 use clap::Parser;
 use futures::TryFutureExt;
 use log::{error, info, warn};
+#[cfg(target_env = "msvc")]
 use mimalloc::MiMalloc;
 use openssl::{
     asn1::Asn1Time,
@@ -28,6 +29,8 @@ use openssl::{
 };
 use parking_lot::{Mutex, RwLock};
 use tempfile::TempPath;
+#[cfg(not(target_env = "msvc"))]
+use tikv_jemallocator::Jemalloc;
 use tokio::{
     fs::File,
     io::{AsyncBufReadExt, BufReader},
@@ -58,6 +61,10 @@ mod util;
 
 type DownloadState = RwLock<HashMap<[u8; 20], (Arc<TempPath>, watch::Receiver<u64>)>>;
 
+#[cfg(not(target_env = "msvc"))]
+#[global_allocator]
+static GLOBAL: Jemalloc = Jemalloc;
+#[cfg(target_env = "msvc")]
 #[global_allocator]
 static GLOBAL: MiMalloc = MiMalloc;
 
