@@ -901,7 +901,7 @@ dependencies = [
  "mimalloc",
  "mime",
  "openssl",
- "openssl-src 300.0.11+3.0.7",
+ "openssl-src",
  "parking_lot",
  "pin-project-lite",
  "rand",
@@ -1346,15 +1346,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "openssl-src"
-version = "300.0.11+3.0.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "181e2429088818099075f6ccf30e6d096a513c46e7e0b946a4dde055c35cb17a"
-dependencies = [
- "cc",
-]
-
-[[package]]
 name = "openssl-sys"
 version = "0.9.80"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1363,7 +1354,7 @@ dependencies = [
  "autocfg",
  "cc",
  "libc",
- "openssl-src 111.24.0+1.1.1s",
+ "openssl-src",
  "pkg-config",
  "vcpkg",
 ]
