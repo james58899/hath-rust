@@ -178,7 +178,7 @@ async fn hath(
                         let write_off = *rx.borrow();
 
                         while write_off > read_off {
-                            let mut buffer = BytesMut::with_capacity(8*1024);
+                            let mut buffer = BytesMut::with_capacity(64*1024); // 64 KiB
                             match file.read_buf(&mut buffer).await {
                                 Ok(s) => read_off += s as u64,
                                 Err(err) => yield Err(err)
