@@ -3,6 +3,7 @@ use std::{
     fmt::Display,
     fs::Metadata,
     io::Error,
+    os::unix::prelude::PermissionsExt,
     path::{Path, PathBuf},
     sync::{
         atomic::{AtomicU64, AtomicUsize, Ordering::Relaxed},
@@ -21,7 +22,7 @@ use openssl::sha::Sha1;
 use parking_lot::{Mutex, RwLock};
 use tempfile::TempPath;
 use tokio::{
-    fs::{copy, create_dir_all, metadata, read_dir, remove_dir_all, remove_file, rename, DirEntry, File},
+    fs::{copy, create_dir_all, metadata, read_dir, remove_dir_all, remove_file, rename, set_permissions, DirEntry, File},
     io::AsyncReadExt,
     spawn,
     sync::mpsc::UnboundedSender,
@@ -128,7 +129,13 @@ impl CacheManager {
             // Can't cross fs move file, try copy.
             if let Err(err) = copy(file_path, &path).await {
                 error!("Import cache failed: {}", err);
+                return;
             }
+        }
+
+        // Fix permission
+        if cfg!(unix) {
+            _ = set_permissions(&path, PermissionsExt::from_mode(0o644)).await;
         }
 
         self.mark_recently_accessed(info, false).await;
