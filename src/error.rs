@@ -2,7 +2,6 @@ use core::fmt;
 
 #[derive(Debug)]
 pub enum Error {
-    CertExpired,
     VersionTooOld,
     ApiResponseFail { fail_code: String, message: String },
     ConnectTestFail,
@@ -24,7 +23,6 @@ impl std::error::Error for Error {}
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            Error::CertExpired => write!(f, "Cert expired"),
             Error::VersionTooOld => write!(f, "Your client is too old to connect to the Hentai@Home Network."),
             Error::ApiResponseFail { fail_code, message } => write!(f, "Code={fail_code}, Message={message}"),
             Error::ConnectTestFail => write!(f, "Connect test failed"),

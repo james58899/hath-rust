@@ -23,7 +23,6 @@ use log::{error, info, warn};
 #[cfg(target_env = "msvc")]
 use mimalloc::MiMalloc;
 use openssl::{
-    asn1::Asn1Time,
     pkcs12::ParsedPkcs12,
     ssl::{ClientHelloResponse, SslAcceptor, SslAcceptorBuilder, SslMethod, SslOptions},
 };
@@ -138,24 +137,16 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     // command channel
     let (tx, mut rx) = mpsc::channel::<Command>(1);
-    let cert = client.get_cert().await.unwrap();
-    if cert.cert.not_after() < Asn1Time::days_from_now(1).unwrap() {
-        error!(
-            "The retrieved certificate is expired, or the system time is off by more than a day. Correct the system time and try again."
-        );
-        return Err(error::Error::CertExpired.into());
-    }
-
     let (server, cert_changer) = create_server(
         args.port.unwrap_or_else(|| init_settings.client_port()),
-        cert,
+        client.get_cert().await.unwrap(),
         AppState {
             runtime: Handle::current(),
             reqwest: create_http_client(Duration::from_secs(60)),
             rpc: client.clone(),
             download_state: RwLock::new(HashMap::new()),
             cache_manager: cache_manager.clone(),
-            command_channel: tx,
+            command_channel: tx.clone(),
         },
     );
     let server_handle = server.handle();
@@ -191,11 +182,20 @@ async fn main() -> Result<(), Box<dyn Error>> {
         while let Some(command) = rx.recv().await {
             match command {
                 Command::ReloadCert => {
-                    if let Some(cert) = client2.get_cert().await {
-                        if cert_changer.send(cert).is_err() {
-                            error!("Update SSL Cert fail");
-                        }
+                    match client2.get_cert().await {
+                        Some(cert) => match cert_changer.send(cert) {
+                            Ok(_) => continue, // Cert update send
+                            Err(_) => error!("Update SSL cert fail"),
+                        },
+                        None => error!("Fetch SSL cert fail"),
                     }
+
+                    // Retry after 10s
+                    let tx2 = tx.clone();
+                    tokio::spawn(async move {
+                        sleep(Duration::from_secs(10)).await;
+                        _ = tx2.send(Command::ReloadCert).await;
+                    });
                 }
                 Command::RefreshSettings => {
                     client2.refresh_settings().await;
