@@ -96,8 +96,6 @@ struct Args {
 struct AppState {
     runtime: Handle,
     reqwest: reqwest::Client,
-    id: i32,
-    key: String,
     rpc: Arc<RPCClient>,
     download_state: DownloadState,
     cache_manager: Arc<CacheManager>,
@@ -154,8 +152,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
         AppState {
             runtime: Handle::current(),
             reqwest: create_http_client(Duration::from_secs(60)),
-            id,
-            key,
             rpc: client.clone(),
             download_state: RwLock::new(HashMap::new()),
             cache_manager: cache_manager.clone(),

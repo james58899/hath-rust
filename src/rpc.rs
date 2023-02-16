@@ -110,6 +110,14 @@ impl RPCClient {
         }
     }
 
+    pub fn id(&self) -> i32 {
+        self.id
+    }
+
+    pub fn key(&self) -> &str {
+        &self.key
+    }
+
     pub async fn login(&self) -> Result<InitSettings, Error> {
         // Version & time check
         if let Some((min, new)) = self.check_stat().await? {

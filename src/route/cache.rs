@@ -47,7 +47,7 @@ async fn hath(
     let time = keystamp.first().unwrap_or(&"");
     let hash = keystamp.last().unwrap_or(&"");
     let time_diff = &(data.rpc.get_timestemp() - time.parse::<i64>().unwrap_or_default());
-    let hash_string = format!("{}-{}-{}-hotlinkthis", time, file_id, data.key);
+    let hash_string = format!("{}-{}-{}-hotlinkthis", time, file_id, data.rpc.key());
     if time.is_empty() || hash.is_empty() || !TTL.contains(time_diff) || !string_to_hash(hash_string).starts_with(hash) {
         return forbidden();
     };
