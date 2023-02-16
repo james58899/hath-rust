@@ -74,7 +74,7 @@ impl CacheManager {
             // Background cache scan
             info!("Start background cache scan");
             spawn(async move {
-                if let Err(err) = manager.scan_cache(static_range, 1, verify_cache).await {
+                if let Err(err) = manager.scan_cache(static_range, 4, verify_cache).await {
                     error!("Cache scan error: {}", err);
                     let _ = shutdown.send(());
                 }
