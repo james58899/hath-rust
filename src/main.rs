@@ -10,7 +10,7 @@ use std::{
 
 use actix_tls::accept::openssl::TlsStream;
 use actix_web::{
-    dev::Service,
+    dev::{Server, Service},
     http::{header, ConnectionType},
     middleware::DefaultHeaders,
     rt::net::TcpStream,
@@ -58,8 +58,6 @@ mod route;
 mod rpc;
 mod util;
 
-type DownloadState = RwLock<HashMap<[u8; 20], (Arc<TempPath>, watch::Receiver<u64>)>>;
-
 #[cfg(not(target_env = "msvc"))]
 #[global_allocator]
 static GLOBAL: Jemalloc = Jemalloc;
@@ -91,6 +89,8 @@ struct Args {
     #[arg(long)]
     temp_dir: Option<String>,
 }
+
+type DownloadState = RwLock<HashMap<[u8; 20], (Arc<TempPath>, watch::Receiver<u64>)>>;
 
 struct AppState {
     runtime: Handle,
@@ -144,7 +144,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             runtime: Handle::current(),
             reqwest: create_http_client(Duration::from_secs(60)),
             rpc: client.clone(),
-            download_state: RwLock::new(HashMap::new()),
+            download_state: Default::default(),
             cache_manager: cache_manager.clone(),
             command_channel: tx.clone(),
         },
@@ -286,7 +286,7 @@ async fn read_credential<P: AsRef<Path>>(data_path: P) -> Option<(i32, String)> 
     Some((id, key))
 }
 
-fn create_server(port: u16, cert: ParsedPkcs12, data: AppState) -> (actix_web::dev::Server, watch::Sender<ParsedPkcs12>) {
+fn create_server(port: u16, cert: ParsedPkcs12, data: AppState) -> (Server, watch::Sender<ParsedPkcs12>) {
     let logger = middleware::Logger::default();
     let connection_counter = middleware::ConnectionCounter::new(data.rpc.settings(), data.command_channel.clone());
     let app_data = Data::new(data);

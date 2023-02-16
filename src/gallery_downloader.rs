@@ -224,11 +224,7 @@ impl GalleryDownloader {
                         debug!("GalleryDownloader: Parsed title={}", title);
 
                         // MINXRES must be passed before TITLE for this to work. the only purpose is to make distinct titles
-                        xres_title = if minxres == "org" {
-                            String::new()
-                        } else {
-                            format!("-{minxres}x")
-                        };
+                        xres_title = if minxres == "org" { String::new() } else { format!("-{minxres}x") };
                     }
                     _ => (),
                 }

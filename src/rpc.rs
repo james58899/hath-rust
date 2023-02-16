@@ -1,4 +1,5 @@
 use std::{
+    cmp::min,
     collections::HashMap,
     net::IpAddr,
     str::FromStr,
@@ -7,7 +8,7 @@ use std::{
         Arc,
     },
     time::{Duration, Instant},
-    vec, cmp::min,
+    vec,
 };
 
 use chrono::{TimeZone, Utc};
@@ -45,7 +46,7 @@ pub struct RPCClient {
 
 pub struct Settings {
     size_limit: AtomicU64,
-    throttle_bytes: AtomicU64
+    throttle_bytes: AtomicU64,
 }
 
 pub struct InitSettings {
@@ -108,7 +109,7 @@ impl RPCClient {
             running: AtomicBool::new(false),
             settings: Arc::new(Settings {
                 size_limit: AtomicU64::new(u64::MAX),
-                throttle_bytes: AtomicU64::new(0)
+                throttle_bytes: AtomicU64::new(0),
             }),
         }
     }

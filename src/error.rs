@@ -6,7 +6,7 @@ pub enum Error {
     ApiResponseFail { fail_code: String, message: String },
     ConnectTestFail,
     InitSettingsMissing(String),
-    HashMismatch { expected: [u8;20], actual: [u8;20] },
+    HashMismatch { expected: [u8; 20], actual: [u8; 20] },
 }
 
 impl Error {
