@@ -28,14 +28,14 @@ pub(super) fn random_response(size: u64) -> HttpResponse {
     HttpResponse::Ok().body(SizedStream::new(
         size,
         stream! {
-            let mut buffer: [u8; 8192] = [0; 8192];
-            let mut rand = SmallRng::from_entropy();
-            rand.fill_bytes(&mut buffer);
+            let mut buffer = [0; 8192];
+            SmallRng::from_entropy().fill_bytes(&mut buffer);
+            let buffer = Bytes::copy_from_slice(&buffer);
 
             let mut filled = 0;
             while(filled < size) {
                 let size = cmp::min(size - filled, 8192) as usize;
-                yield Result::Ok::<Bytes, Infallible>(Bytes::copy_from_slice(&buffer[0..size]));
+                yield Result::Ok::<Bytes, Infallible>(buffer.slice(0..size));
                 filled += size as u64;
             }
         },
