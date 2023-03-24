@@ -16,7 +16,7 @@ use futures::{executor::block_on, TryFutureExt};
 use log::{debug, error, info, warn};
 use openssl::{
     asn1::Asn1Time,
-    pkcs12::{ParsedPkcs12, Pkcs12},
+    pkcs12::{ParsedPkcs12_2, Pkcs12},
 };
 use parking_lot::{RwLock, RwLockUpgradableReadGuard};
 use rand::prelude::SliceRandom;
@@ -173,7 +173,7 @@ impl RPCClient {
         }
     }
 
-    pub async fn get_cert(&self) -> Option<ParsedPkcs12> {
+    pub async fn get_cert(&self) -> Option<ParsedPkcs12_2> {
         let cert = self
             .reqwest
             .get(self.build_url("get_cert", "", None))
@@ -183,11 +183,11 @@ impl RPCClient {
             .await
             .ok()
             .and_then(|data| Pkcs12::from_der(&data[..]).ok())
-            .and_then(|cert| cert.parse(self.key.as_str()).ok());
+            .and_then(|cert| cert.parse2(self.key.as_str()).ok());
 
         if let Some(cert) = &cert {
             let tomorrow = Asn1Time::from_unix(self.get_timestemp() + 86400).unwrap_or_else(|_| Asn1Time::days_from_now(1).unwrap());
-            if cert.cert.not_after() < tomorrow {
+            if cert.cert.is_some() && cert.pkey.is_some() && cert.cert.as_ref().unwrap().not_after() < tomorrow {
                 error!("The retrieved certificate is expired, or the system time is off by more than a day. Correct the system time and try again.");
                 return None;
             }

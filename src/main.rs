@@ -23,8 +23,7 @@ use log::{error, info, warn};
 #[cfg(target_env = "msvc")]
 use mimalloc::MiMalloc;
 use openssl::{
-    pkcs12::ParsedPkcs12,
-    ssl::{ClientHelloResponse, SslAcceptor, SslAcceptorBuilder, SslMethod, SslOptions},
+    ssl::{ClientHelloResponse, SslAcceptor, SslAcceptorBuilder, SslMethod, SslOptions}, pkcs12::ParsedPkcs12_2,
 };
 use parking_lot::{Mutex, RwLock};
 use tempfile::TempPath;
@@ -286,7 +285,7 @@ async fn read_credential<P: AsRef<Path>>(data_path: P) -> Option<(i32, String)> 
     Some((id, key))
 }
 
-fn create_server(port: u16, cert: ParsedPkcs12, data: AppState) -> (Server, watch::Sender<ParsedPkcs12>) {
+fn create_server(port: u16, cert: ParsedPkcs12_2, data: AppState) -> (Server, watch::Sender<ParsedPkcs12_2>) {
     let logger = middleware::Logger::default();
     let connection_counter = middleware::ConnectionCounter::new(data.rpc.settings(), data.command_channel.clone());
     let app_data = Data::new(data);
@@ -340,7 +339,7 @@ fn create_server(port: u16, cert: ParsedPkcs12, data: AppState) -> (Server, watc
     (server, cert_sender)
 }
 
-fn create_ssl_acceptor(cert: &ParsedPkcs12) -> SslAcceptorBuilder {
+fn create_ssl_acceptor(cert: &ParsedPkcs12_2) -> SslAcceptorBuilder {
     let mut builder = SslAcceptor::mozilla_intermediate(SslMethod::tls_server()).unwrap();
     builder.clear_options(SslOptions::NO_TLSV1_3);
     builder.set_options(SslOptions::NO_RENEGOTIATION | SslOptions::ENABLE_MIDDLEBOX_COMPAT);
@@ -390,9 +389,9 @@ fn create_ssl_acceptor(cert: &ParsedPkcs12) -> SslAcceptorBuilder {
             .set_ciphersuites("TLS_AES_128_GCM_SHA256:TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256")
             .unwrap();
     }
-    builder.set_private_key(&cert.pkey).unwrap();
-    builder.set_certificate(&cert.cert).unwrap();
-    if let Some(i) = &cert.chain {
+    builder.set_private_key(cert.pkey.as_ref().unwrap()).unwrap();
+    builder.set_certificate(cert.cert.as_ref().unwrap()).unwrap();
+    if let Some(i) = &cert.ca {
         i.iter().rev().for_each(|j| builder.add_extra_chain_cert(j.to_owned()).unwrap());
     }
     builder
