@@ -52,6 +52,7 @@ async fn hath(
         return forbidden();
     };
 
+    // Check cache hit
     let info = match CacheFileInfo::from_file_id(&file_id) {
         Some(info) => info,
         None => return HttpResponse::NotFound().body("An error has occurred. (404)"),
@@ -75,6 +76,7 @@ async fn hath(
         return res;
     }
 
+    // Cache miss, proxy request
     let file_size = info.size() as u64;
 
     // Check if the file is already downloading
@@ -141,7 +143,7 @@ async fn hath(
                             }
                             hasher.update(data);
                             progress += write_size as u64;
-                            let _ = tx.send(progress); // Ignore error
+                            tx.send_replace(progress);
                         }
                         if progress == file_size {
                             if let Err(err) = file.flush().await {
