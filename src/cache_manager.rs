@@ -302,11 +302,18 @@ impl CacheManager {
                         let mut file = File::open(&path).await?;
                         let mut buf = vec![0; 1024 * 1024]; // 1MiB
                         loop {
-                            let n = file.read(&mut buf).await?;
-                            if n == 0 {
-                                break;
+                            match file.read(&mut buf).await {
+                                Ok(n) => {
+                                    if n == 0 {
+                                        break;
+                                    }
+                                    hasher.update(&buf[0..n]);
+                                }
+                                Err(e) => {
+                                    error!("Read cache file {} error: {}", &path.display(), e);
+                                    break;
+                                }
                             }
-                            hasher.update(&buf[0..n]);
                         }
                         let actual_hash = hasher.finish();
                         if actual_hash != info.hash {
