@@ -150,9 +150,9 @@ async fn hath(
                                 error!("Proxy temp file flush fail: {}", err);
                                 break 'source;
                             }
-                            tx.closed().await; // Wait all client finish downloading
-                            data.download_state.write().remove(&info2.hash()); // Remove from download state
                             let hash = hasher.finish();
+                            data.download_state.write().remove(&info2.hash());
+                            tx.send_replace(progress);
                             if hash == info2.hash() {
                                 data.cache_manager.import_cache(&info2, &temp_path2).await;
                             } else {
