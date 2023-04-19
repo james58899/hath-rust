@@ -172,7 +172,7 @@ impl CacheManager {
         let manager = Arc::downgrade(&new);
         spawn(async move {
             let mut counter: u32 = 0;
-            let mut next_run = Instant::now() + Duration::from_secs(10);
+            let mut next_run = Instant::now();
             while let Some(manager) = manager.upgrade() {
                 sleep_until(next_run).await;
 
