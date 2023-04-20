@@ -35,7 +35,7 @@ tikv-jemallocator = { version = "0.5.0", features = ["background_threads", "unpr
 mimalloc = { version = "0.1", default-features = false }
 
 [build-dependencies]
-openssl-src = { version = "111", features = ["weak-crypto"] }
+openssl-src = { version = "300", features = ["weak-crypto"] }
 
 [profile.release]
 lto = true
