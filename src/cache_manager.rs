@@ -351,6 +351,11 @@ impl CacheManager {
             .collect::<Vec<_>>()
             .await;
 
+        if counter.load(Relaxed) == 0 && static_range.len() > 20 {
+            error!("This client has static ranges assigned to it, but the cache is empty. Check file permissions and file system integrity.");
+            return Err(Error::new(std::io::ErrorKind::NotFound, "Cache is empty."));
+        }
+
         // Save oldest mtime
         let mut map = self.cache_date.lock();
         map.clear();
