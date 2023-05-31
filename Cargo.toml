@@ -10,7 +10,7 @@ actix-web = { version = "4.3", default-features = false, features = ["macros", "
 actix-web-lab = "0.19"
 async-stream = "0.3"
 chrono = "0.4"
-clap = { version = "4.1", features = ["derive"] }
+clap = { version = "4.3", features = ["derive"] }
 cpufeatures = "0.2"
 filesize = "0.2"
 filetime = "0.2"
@@ -22,9 +22,9 @@ openssl = { version = "*", features = ["vendored"] }
 parking_lot = { version = "0.12", features = ["hardware-lock-elision", "deadlock_detection"] }
 pin-project-lite = "0.2"
 rand = { version = "0.8", default-features = false, features = ["small_rng"] }
-regex = "1.7"
+regex = "1.8"
 reqwest = { version = "0.11", default-features = false, features = ["rustls-tls", "stream"] }
-tempfile = "3.3"
+tempfile = "3.5"
 tokio = { version = "1", features = ["full", "parking_lot"] }
 tokio-stream = { version = "0.1", default-features = false, features = ["fs"] }
 
