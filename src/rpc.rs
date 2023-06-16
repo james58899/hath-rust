@@ -13,6 +13,7 @@ use std::{
 
 use chrono::{TimeZone, Utc};
 use futures::{executor::block_on, TryFutureExt};
+use hyper::body::to_bytes;
 use log::{debug, error, info, warn};
 use openssl::{
     asn1::Asn1Time,
@@ -25,7 +26,8 @@ use reqwest::{IntoUrl, Url};
 use crate::{
     error::Error,
     gallery_downloader::GalleryMeta,
-    util::{create_http_client, string_to_hash},
+    rpc_http_client::{self, RPCHttpClient},
+    util::string_to_hash,
 };
 
 const API_VERSION: i32 = 154; // For server check capabilities.
@@ -38,7 +40,7 @@ pub struct RPCClient {
     clock_offset: AtomicI64,
     id: i32,
     key: String,
-    reqwest: reqwest::Client,
+    http_client: RPCHttpClient,
     rpc_servers: RwLock<Vec<String>>,
     running: AtomicBool,
     settings: Arc<Settings>,
@@ -104,7 +106,7 @@ impl RPCClient {
             clock_offset: AtomicI64::new(0),
             id,
             key: key.to_string(),
-            reqwest: create_http_client(Duration::from_secs(600)),
+            http_client: RPCHttpClient::new(Duration::from_secs(600)),
             rpc_servers: RwLock::new(vec![]),
             running: AtomicBool::new(false),
             settings: Arc::new(Settings {
@@ -175,11 +177,10 @@ impl RPCClient {
 
     pub async fn get_cert(&self) -> Option<ParsedPkcs12_2> {
         let cert = self
-            .reqwest
+            .http_client
             .get(self.build_url("get_cert", "", None))
-            .send()
-            .and_then(|res| async { res.error_for_status() })
-            .and_then(|res| res.bytes())
+            .and_then(rpc_http_client::check_status)
+            .and_then(|res| to_bytes(res.into_body()).map_err(|e| e.into()))
             .await
             .ok()
             .and_then(|data| Pkcs12::from_der(&data[..]).ok())
@@ -380,7 +381,7 @@ The program will now terminate.
         let _ = self.send_action("overload", None).await;
     }
 
-    async fn check_stat(&self) -> Result<Option<(i32, i32)>, Error> {
+    pub async fn check_stat(&self) -> Result<Option<(i32, i32)>, Error> {
         let mut url = self.api_base.read().clone();
         url.query_pairs_mut().append_pair("act", "server_stat");
         let start_time = Instant::now();
@@ -439,10 +440,8 @@ The program will now terminate.
                     return Ok(response);
                 }
                 Err(err) => {
-                    if err.is_connect() || err.is_timeout() || err.status().map_or(false, |s| s.is_server_error()) {
-                        self.change_server();
-                    }
-                    error = Box::new(err);
+                    self.change_server();
+                    error = err;
                 }
             }
             retry -= 1;
@@ -451,13 +450,11 @@ The program will now terminate.
         Err(error)
     }
 
-    async fn send_request<U: IntoUrl>(&self, url: U) -> Result<String, reqwest::Error> {
-        self.reqwest
+    async fn send_request<U: IntoUrl>(&self, url: U) -> Result<String, RequestError> {
+        self.http_client
             .get(url)
-            .timeout(Duration::from_secs(600))
-            .send()
-            .and_then(|res| async { res.error_for_status() })
-            .and_then(|res| res.text())
+            .and_then(rpc_http_client::check_status)
+            .and_then(rpc_http_client::to_text)
             .await
     }
 

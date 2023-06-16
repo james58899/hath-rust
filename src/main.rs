@@ -55,6 +55,7 @@ mod logger;
 mod middleware;
 mod route;
 mod rpc;
+mod rpc_http_client;
 mod util;
 
 #[cfg(not(target_env = "msvc"))]
