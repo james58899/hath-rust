@@ -44,6 +44,7 @@ mod metrics;
 mod middleware;
 mod route;
 mod rpc;
+mod rpc_http_client;
 mod server;
 mod util;
 

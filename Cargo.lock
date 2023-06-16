@@ -2239,6 +2239,7 @@ dependencies = [
  "rustls",
  "scopeguard",
  "serde",
+ "socket2",
  "tao",
  "tauri-winres",
  "tempfile",
