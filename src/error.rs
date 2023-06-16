@@ -1,5 +1,6 @@
 use core::fmt;
 
+#[allow(clippy::enum_variant_names)]
 #[derive(Debug)]
 pub enum Error {
     VersionTooOld,
@@ -7,6 +8,7 @@ pub enum Error {
     ConnectTestFail,
     InitSettingsMissing(String),
     HashMismatch { expected: [u8; 20], actual: [u8; 20] },
+    ServerError { status: hyper::StatusCode, body: Option<String> },
 }
 
 impl Error {
@@ -28,6 +30,7 @@ impl fmt::Display for Error {
             Error::ConnectTestFail => write!(f, "Connect test failed"),
             Error::InitSettingsMissing(settings) => write!(f, "Missing init settings: {settings}"),
             Error::HashMismatch { expected, actual } => write!(f, "Hash missmatch. Expected={expected:?}, Actual={actual:?}"),
+            Error::ServerError { status, body } => write!(f, "Status={status}, Body={}", body.clone().unwrap_or_default()),
         }
     }
 }
