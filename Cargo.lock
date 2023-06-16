@@ -1769,6 +1769,7 @@ dependencies = [
  "regex",
  "reqwest",
  "scopeguard",
+ "socket2",
  "tao",
  "tempfile",
  "tikv-jemallocator",

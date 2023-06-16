@@ -18,7 +18,7 @@ futures = "0.3"
 hex = "0.4"
 http-body = "1.0"
 http-body-util = "0.1"
-hyper = { version = "1.2", features = ["http1", "server"] }
+hyper = { version = "1.2", features = ["client", "http1", "server"] }
 hyper-util = { version = "0.1", features = ["tokio"] }
 inquire = "0.7"
 log = { version = "0.4", features = ["std"] }
@@ -30,6 +30,7 @@ rand = { version = "0.8", features = ["small_rng"] }
 regex = "1.10"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "stream", "socks"] }
 scopeguard = "1.2"
+socket2 = "0.5"
 tempfile = "3.10"
 tokio = { version = "1", features = ["full", "parking_lot"] }
 tokio-openssl = "0.6"
