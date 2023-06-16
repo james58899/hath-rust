@@ -17,12 +17,7 @@ use log::{debug, error, info, warn};
 use parking_lot::{RwLock, RwLockUpgradableReadGuard};
 use reqwest::{IntoUrl, Url};
 
-use crate::{
-    error::Error,
-    gallery_downloader::GalleryMeta,
-    server::ParsedCert,
-    util::{create_http_client, string_to_hash},
-};
+use crate::{error::Error, gallery_downloader::GalleryMeta, rpc_http_client::RPCHttpClient, server::ParsedCert, util::string_to_hash};
 
 const API_VERSION: i32 = 176; // For server check capabilities.
 const DEFAULT_SERVER: &str = "rpc.hentaiathome.net";
@@ -34,7 +29,7 @@ pub struct RPCClient {
     clock_offset: AtomicI64,
     id: i32,
     key: String,
-    reqwest: reqwest::Client,
+    http_client: RPCHttpClient,
     rpc_servers: RwLock<Vec<String>>,
     running: AtomicBool,
     settings: Arc<Settings>,
@@ -121,7 +116,7 @@ impl RPCClient {
             clock_offset: AtomicI64::new(0),
             id,
             key: key.to_string(),
-            reqwest: create_http_client(Duration::from_secs(600), None),
+            http_client: RPCHttpClient::new(Duration::from_secs(600)),
             rpc_servers: RwLock::new(vec![]),
             running: AtomicBool::new(false),
             settings: Arc::new(Settings {
@@ -194,11 +189,9 @@ impl RPCClient {
     }
 
     pub async fn get_cert(&self) -> Option<ParsedCert> {
-        self.reqwest
+        self.http_client
             .get(self.build_url("get_cert", "", None))
-            .send()
-            .and_then(|res| async { res.error_for_status() })
-            .and_then(|res| res.bytes())
+            .and_then(|res| self.http_client.to_bytes(res))
             .await
             .ok()
             .and_then(|data| ParsedCert::from_p12(&data, &self.key))
@@ -457,10 +450,15 @@ The program will now terminate.
                     return Ok(response);
                 }
                 Err(err) => {
-                    if err.is_connect() || err.is_timeout() || err.status().is_some_and(|s| s.is_server_error()) {
+                    let is_server_err = match err.downcast_ref::<Error>() {
+                        Some(Error::ServerError { status, body: _ }) => status.is_server_error(),
+                        _ => true,
+                    };
+
+                    if is_server_err {
                         self.change_server();
                     }
-                    error = Box::new(err);
+                    error = err;
                 }
             }
         }
@@ -469,17 +467,14 @@ The program will now terminate.
         Err(error)
     }
 
-    async fn send_request<U: IntoUrl>(&self, url: U) -> Result<String, reqwest::Error> {
-        let res = self.reqwest.get(url).send().await?;
-
-        if let Err(err) = res.error_for_status_ref() {
-            let status = res.status();
-            let body = res.text().await.unwrap_or_default();
-            warn!("Server response error: code={}, body={}", status, body);
-            return Err(err);
+    async fn send_request<U: IntoUrl>(&self, url: U) -> Result<String, RequestError> {
+        match self.http_client.get(url).await {
+            Ok(res) => self.http_client.to_text(res).await,
+            Err(err) => {
+                warn!("Send request error: {}", err);
+                Err(err)
+            }
         }
-
-        res.text().await
     }
 
     fn build_url(&self, action: &str, additional: &str, endpoint: Option<&str>) -> Url {
