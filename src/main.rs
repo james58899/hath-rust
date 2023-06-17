@@ -260,7 +260,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         job.abort();
     }
     info!("Shutdown in progress - please wait");
-    sleep(Duration::from_secs(5)).await;
+    sleep(Duration::from_secs(30)).await;
     server_handle.stop(true).await;
     Ok(())
 }
