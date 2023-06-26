@@ -11,7 +11,7 @@ RUN rustup target add aarch64-unknown-linux-gnu
 COPY . .
 RUN --mount=type=cache,target=/root/.cargo cargo fetch
 ARG TARGETARCH
-RUN --mount=type=cache,target=/root/.cargo \
+RUN --mount=type=cache,target=/root/.cargo --mount=type=cache,target=/usr/src/myapp/target,id=target-$TARGETARCH \
     if [ "$TARGETARCH" = "arm64" ] ; then \
         RUSTFLAGS="$RUSTFLAGS -Clink-arg=--target=aarch64-unknown-linux-gnu" cargo install --target=aarch64-unknown-linux-gnu --path . ; \
     else \
