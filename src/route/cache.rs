@@ -84,16 +84,17 @@ async fn hath(
     let (temp_path, mut rx) = if download_state.is_some() {
         download_state.unwrap()
     } else {
-        let sources = data.rpc.sr_fetch(file_index, xres, &file_id).await;
-        if sources.is_none() {
-            return HttpResponse::NotFound().body("An error has occurred. (404)");
-        }
-
         let temp_path = Arc::new(data.cache_manager.create_temp_file().await);
         let (tx, rx) = watch::channel(0); // Download progress
 
         // Tracking download progress
         data.download_state.write().insert(info.hash(), (temp_path.clone(), rx.clone()));
+
+        let sources = data.rpc.sr_fetch(file_index, xres, &file_id).await;
+        if sources.is_none() {
+            data.download_state.write().remove(&info.hash());
+            return HttpResponse::NotFound().body("An error has occurred. (404)");
+        }
 
         // Download worker
         let info2 = info.clone();
@@ -171,6 +172,11 @@ async fn hath(
         (temp_path, rx)
     };
 
+    // Wait download start or 404
+    if *rx.borrow() == 0 && rx.changed().await.is_err() {
+        return HttpResponse::NotFound().body("An error has occurred. (404)");
+    }
+
     let mut builder = HttpResponse::Ok();
     builder.insert_header(ContentType(info.mime_type()));
     builder.insert_header(CacheControl(vec![CacheDirective::Public, CacheDirective::MaxAge(31536000)]));
@@ -179,9 +185,10 @@ async fn hath(
         stream! { // TODO bandwidth limit
             let mut file = File::open(temp_path.as_ref()).await.unwrap();
             let mut read_off = 0;
+            let mut write_off = *rx.borrow();
 
-            'watch: while rx.changed().await.is_ok() {
-                let write_off = *rx.borrow();
+            'watch: while rx.changed().await.is_ok() || write_off != read_off {
+                write_off = *rx.borrow();
 
                 while write_off > read_off {
                     let mut buffer = BytesMut::with_capacity(64*1024); // 64 KiB
