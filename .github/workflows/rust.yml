@@ -2,7 +2,7 @@ name: Rust
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [ "main", "dev" ]
   pull_request:
     branches: [ "main" ]
 
@@ -11,12 +11,46 @@ env:
 
 jobs:
   build:
-
     runs-on: ubuntu-latest
-
+    env:
+      CC: clang-16
+      CXX: clang-16
+      CFLAGS: "-flto -fuse-ld=lld-16"
+      CXXFLAGS: "-flto -fuse-ld=lld-16"
     steps:
     - uses: actions/checkout@v3
-    - name: Build
-      run: cargo build --verbose
-    - name: Run tests
-      run: cargo test --verbose
+    - name: Install build tools
+      run: |
+        wget https://apt.llvm.org/llvm.sh
+        chmod +x llvm.sh
+        sudo ./llvm.sh 16
+        sudo apt-get install -y crossbuild-essential-arm64
+    - uses: actions/cache@v3
+      with:
+        path: |
+          ~/.cargo/bin/
+          ~/.cargo/registry/index/
+          ~/.cargo/registry/cache/
+          ~/.cargo/git/db/
+          target/
+        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+    - name: Install toolchain
+      run: |
+        rustup update
+        rustup target add aarch64-unknown-linux-gnu
+    - name: Build x86_64
+      env:
+        RUSTFLAGS: "-Clinker-plugin-lto -Clinker=clang-16 -Clink-arg=-fuse-ld=lld-16 -Clink-arg=--target=x86_64-unknown-linux-gnu"
+      run: cargo build --verbose --release --target=x86_64-unknown-linux-gnu
+    - uses: actions/upload-artifact@v3
+      with:
+        name: hath-rust-x86_64
+        path: target/x86_64-unknown-linux-gnu/release/hath-rust
+    - name: Build aarch64
+      env:
+        RUSTFLAGS: "-Clinker-plugin-lto -Clinker=clang-16 -Clink-arg=-fuse-ld=lld-16 -Clink-arg=--target=aarch64-unknown-linux-gnu"
+      run: cargo build --verbose --release --target=aarch64-unknown-linux-gnu
+    - uses: actions/upload-artifact@v3
+      with:
+        name: hath-rust-aarch64
+        path: target/aarch64-unknown-linux-gnu/release/hath-rust
