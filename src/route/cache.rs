@@ -90,11 +90,13 @@ async fn hath(
         // Tracking download progress
         data.download_state.write().insert(info.hash(), (temp_path.clone(), rx.clone()));
 
-        let sources = data.rpc.sr_fetch(file_index, xres, &file_id).await;
-        if sources.is_none() {
-            data.download_state.write().remove(&info.hash());
-            return HttpResponse::NotFound().body("An error has occurred. (404)");
-        }
+        let sources = match data.rpc.sr_fetch(file_index, xres, &file_id).await {
+            Some(v) => v,
+            None => {
+                data.download_state.write().remove(&info.hash());
+                return HttpResponse::NotFound().body("An error has occurred. (404)");
+            }
+        };
 
         // Download worker
         let info2 = info.clone();
@@ -102,65 +104,64 @@ async fn hath(
         data.runtime.clone().spawn(async move {
             let mut hasher = Sha1::new();
             let mut progress = 0;
-            'source: for source in sources.unwrap() {
-                'retry: for _ in 0..3 {
-                    let mut file = match OpenOptions::new().write(true).create(true).open(temp_path2.as_ref()).await {
-                        Ok(mut f) => {
-                            if let Err(err) = f.seek(SeekFrom::Start(progress)).await {
-                                error!("Proxy temp file seek fail: {}", err);
-                                continue 'retry;
-                            }
-                            f
-                        }
-                        Err(err) => {
-                            error!("Proxy temp file create fail: {}", err);
+            let mut sources = sources.iter().cycle();
+            'retry: for _ in 0..3 {
+                let mut file = match OpenOptions::new().write(true).create(true).open(temp_path2.as_ref()).await {
+                    Ok(mut f) => {
+                        if let Err(err) = f.seek(SeekFrom::Start(progress)).await {
+                            error!("Proxy temp file seek fail: {}", err);
                             continue 'retry;
                         }
-                    };
+                        f
+                    }
+                    Err(err) => {
+                        error!("Proxy temp file create fail: {}", err);
+                        continue 'retry;
+                    }
+                };
 
-                    let mut download = 0;
-                    let request = data.reqwest.get(&source).timeout(Duration::from_secs(300));
-                    if let Ok(mut stream) = request.send().await.and_then(|r| r.error_for_status()).map(|r| r.bytes_stream()) {
-                        while let Some(bytes) = stream.next().await {
-                            let bytes = match &bytes {
-                                Ok(it) => it,
-                                Err(err) => {
-                                    error!("Proxy download fail: {}", err);
-                                    continue 'retry; // Try next source
-                                }
-                            };
-                            download += bytes.len() as u64;
-
-                            // Skip downloaded data
-                            if download <= progress {
-                                continue;
-                            }
-                            let write_size = (download - progress) as usize;
-                            let start = bytes.len() - write_size;
-                            let data = &bytes[start..];
-                            if let Err(err) = file.write_all(data).await {
-                                error!("Proxy temp file write fail: {}", err);
+                let mut download = 0;
+                let request = data.reqwest.get(sources.next().unwrap()).timeout(Duration::from_secs(300));
+                if let Ok(mut stream) = request.send().await.and_then(|r| r.error_for_status()).map(|r| r.bytes_stream()) {
+                    while let Some(bytes) = stream.next().await {
+                        let bytes = match &bytes {
+                            Ok(it) => it,
+                            Err(err) => {
+                                error!("Proxy download fail: {}", err);
                                 continue 'retry;
                             }
-                            hasher.update(data);
-                            progress += write_size as u64;
-                            tx.send_replace(progress);
+                        };
+                        download += bytes.len() as u64;
+
+                        // Skip downloaded data
+                        if download <= progress {
+                            continue;
                         }
-                        if progress == file_size {
-                            if let Err(err) = file.flush().await {
-                                error!("Proxy temp file flush fail: {}", err);
-                                break 'source;
-                            }
-                            let hash = hasher.finish();
-                            data.download_state.write().remove(&info2.hash());
-                            tx.send_replace(progress);
-                            if hash == info2.hash() {
-                                data.cache_manager.import_cache(&info2, &temp_path2).await;
-                            } else {
-                                error!("Cache hash mismatch: expected: {:x?}, got: {:x?}", info2.hash(), hash);
-                            }
-                            break 'source;
+                        let write_size = (download - progress) as usize;
+                        let start = bytes.len() - write_size;
+                        let data = &bytes[start..];
+                        if let Err(err) = file.write_all(data).await {
+                            error!("Proxy temp file write fail: {}", err);
+                            break 'retry;
                         }
+                        hasher.update(data);
+                        progress += write_size as u64;
+                        tx.send_replace(progress);
+                    }
+                    if progress == file_size {
+                        if let Err(err) = file.flush().await {
+                            error!("Proxy temp file flush fail: {}", err);
+                            break 'retry;
+                        }
+                        let hash = hasher.finish();
+                        data.download_state.write().remove(&info2.hash());
+                        tx.send_replace(progress);
+                        if hash == info2.hash() {
+                            data.cache_manager.import_cache(&info2, &temp_path2).await;
+                        } else {
+                            error!("Cache hash mismatch: expected: {:x?}, got: {:x?}", info2.hash(), hash);
+                        }
+                        break 'retry;
                     }
                 }
             }
