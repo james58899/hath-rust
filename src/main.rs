@@ -23,7 +23,8 @@ use log::{error, info, warn};
 #[cfg(target_env = "msvc")]
 use mimalloc::MiMalloc;
 use openssl::{
-    ssl::{ClientHelloResponse, SslAcceptor, SslAcceptorBuilder, SslMethod, SslOptions}, pkcs12::ParsedPkcs12_2,
+    pkcs12::ParsedPkcs12_2,
+    ssl::{ClientHelloResponse, SslAcceptor, SslAcceptorBuilder, SslMethod, SslOptions},
 };
 use parking_lot::{Mutex, RwLock};
 use tempfile::TempPath;
@@ -44,6 +45,7 @@ use tokio::{
 use crate::{
     cache_manager::{CacheFileInfo, CacheManager},
     gallery_downloader::GalleryDownloader,
+    logger::Logger,
     rpc::RPCClient,
     util::{create_dirs, create_http_client},
 };
@@ -87,6 +89,12 @@ struct Args {
 
     #[arg(long)]
     temp_dir: Option<String>,
+
+    #[arg(long)]
+    disable_logging: Option<bool>,
+
+    #[arg(long, default_value_t = false)]
+    flush_log: bool,
 }
 
 type DownloadState = RwLock<HashMap<[u8; 20], (Arc<TempPath>, watch::Receiver<u64>)>>;
@@ -119,7 +127,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     create_dirs(vec![&data_dir, &log_dir, &cache_dir, &temp_dir, &download_dir]).await?;
 
-    init_logger();
+    // Init logger
+    let logger = Logger::init(log_dir).unwrap();
+    if args.disable_logging.unwrap_or(false) {
+        logger.config().write_info(false);
+    }
+    if args.flush_log {
+        logger.config().flush(true);
+    }
 
     info!("Hentai@Home {} (Rust) starting up", CLIENT_VERSION);
 
@@ -176,6 +191,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let client2 = client.clone();
     let downloader = Arc::new(Mutex::new(None));
     let downloader2 = downloader.clone();
+    let logger_config = logger.config();
     tokio::spawn(async move {
         let mut last_overload = Instant::now().checked_sub(Duration::from_secs(30)).unwrap_or_else(Instant::now);
         while let Some(command) = rx.recv().await {
@@ -198,6 +214,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 }
                 Command::RefreshSettings => {
                     client2.refresh_settings().await;
+                    if args.disable_logging.is_none() {
+                        logger_config.write_info(!client2.settings().disable_logging());
+                    }
                 }
                 Command::StartDownloader => {
                     let mut downloader = downloader2.lock();
@@ -262,16 +281,13 @@ async fn main() -> Result<(), Box<dyn Error>> {
     info!("Shutdown in progress - please wait");
     sleep(Duration::from_secs(30)).await;
     server_handle.stop(true).await;
+    logger.shutdown().await;
     Ok(())
 }
 
 /**
  * main helper
 */
-fn init_logger() {
-    logger::init().unwrap();
-}
-
 async fn read_credential<P: AsRef<Path>>(data_path: P) -> Option<(i32, String)> {
     let path = data_path.as_ref().join("client_login");
     let mut file = File::open(path.clone()).map_ok(|f| BufReader::new(f).lines()).await.ok()?; // TODO better error handle

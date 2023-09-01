@@ -47,6 +47,7 @@ pub struct RPCClient {
 pub struct Settings {
     size_limit: AtomicU64,
     throttle_bytes: AtomicU64,
+    disable_logging: AtomicBool,
 }
 
 pub struct InitSettings {
@@ -84,6 +85,10 @@ impl Settings {
         20 + min(480, self.throttle_bytes.load(Ordering::Relaxed) / 10000)
     }
 
+    pub fn disable_logging(&self) -> bool {
+        self.disable_logging.load(Ordering::Relaxed)
+    }
+
     fn update(&self, settings: HashMap<String, String>) {
         if let Some(size) = settings.get("disklimit_bytes").and_then(|s| s.parse().ok()) {
             self.size_limit.store(size, Ordering::Relaxed);
@@ -91,6 +96,10 @@ impl Settings {
 
         if let Some(size) = settings.get("throttle_bytes").and_then(|s| s.parse().ok()) {
             self.throttle_bytes.store(size, Ordering::Relaxed);
+        }
+
+        if let Some(disabled) = settings.get("disable_logging").and_then(|s| s.parse().ok()) {
+            self.disable_logging.store(disabled, Ordering::Relaxed);
         }
 
         // TODO update other settings
@@ -110,6 +119,7 @@ impl RPCClient {
             settings: Arc::new(Settings {
                 size_limit: AtomicU64::new(u64::MAX),
                 throttle_bytes: AtomicU64::new(0),
+                disable_logging: AtomicBool::new(false),
             }),
         }
     }

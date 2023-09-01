@@ -16,7 +16,7 @@ filesize = "0.2"
 filetime = "0.2"
 futures = "0.3"
 hex = "0.4"
-log = "0.4"
+log = { version = "0.4", features = ["std"] }
 mime = "0.3"
 openssl = { version = "*", features = ["vendored"] }
 parking_lot = { version = "0.12", features = ["hardware-lock-elision", "deadlock_detection"] }
