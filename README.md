@@ -16,17 +16,17 @@ Features that are included in the official and are working.
 * Gallery downloader
 * Speed test
 * Cache size management
+* logging
 
 ### Not works
 Included in the official release but not yet implemented.
 * Initialize client[^init]
 * Disable RPC IP check
-* Bandwidth limit
-* logging
 * Disk space check[^disk]
 
 ### No planned
 * HTTP/2[^h2]
+* Bandwidth limit
 
 
 [^init]: Need to manually create a `client_login` file in the data directory.
