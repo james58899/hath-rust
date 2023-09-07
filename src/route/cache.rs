@@ -157,11 +157,12 @@ async fn hath(
                         data.download_state.write().remove(&info2.hash());
                         tx.send_replace(progress);
                         if hash == info2.hash() {
+                            tx.closed().await; // Wait all request done
                             data.cache_manager.import_cache(&info2, &temp_path2).await;
                         } else {
                             error!("Cache hash mismatch: expected: {:x?}, got: {:x?}", info2.hash(), hash);
                         }
-                        break 'retry;
+                        return;
                     }
                 }
             }
