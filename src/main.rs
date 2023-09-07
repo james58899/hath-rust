@@ -105,8 +105,8 @@ struct Args {
     #[arg(long)]
     temp_dir: Option<String>,
 
-    #[arg(long)]
-    disable_logging: Option<bool>,
+    #[arg(long, default_value_t = false)]
+    disable_logging: bool,
 
     #[arg(long, default_value_t = false)]
     flush_log: bool,
@@ -147,12 +147,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     // Init logger
     let logger = Logger::init(log_dir).unwrap();
-    if args.disable_logging.unwrap_or(false) {
-        logger.config().write_info(false);
-    }
-    if args.flush_log {
-        logger.config().flush(true);
-    }
+    logger.config().write_info(!args.disable_logging).flush(args.flush_log);
 
     info!(
         "Hentai@Home {} (Rust {}-{}) starting up",
@@ -241,7 +236,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 }
                 Command::RefreshSettings => {
                     client2.refresh_settings().await;
-                    if args.disable_logging.is_none() {
+                    if !args.disable_logging {
                         logger_config.write_info(!client2.settings().disable_logging());
                     }
                 }

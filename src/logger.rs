@@ -70,12 +70,14 @@ impl Logger {
 }
 
 impl LoggerConfig {
-    pub fn write_info(&self, enabled: bool) {
+    pub fn write_info(&self, enabled: bool) -> &Self {
         self.write_info.store(enabled, Ordering::Relaxed);
+        self
     }
 
-    pub fn flush(&self, enabled: bool) {
+    pub fn flush(&self, enabled: bool) -> &Self {
         self.flush.store(enabled, Ordering::Relaxed);
+        self
     }
 }
 
