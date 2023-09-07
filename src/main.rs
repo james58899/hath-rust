@@ -95,6 +95,9 @@ struct Args {
 
     #[arg(long, default_value_t = false)]
     flush_log: bool,
+
+    #[arg(long)]
+    max_connection: Option<u64>,
 }
 
 type DownloadState = RwLock<HashMap<[u8; 20], (Arc<TempPath>, watch::Receiver<u64>)>>;
@@ -148,6 +151,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let (shutdown_send, shutdown_recv) = mpsc::unbounded_channel::<()>();
     let settings = client.settings();
     let cache_manager = CacheManager::new(cache_dir, temp_dir, settings.clone(), &init_settings, shutdown_send.clone()).await?;
+
+    if let Some(max) = args.max_connection {
+        settings.override_max_connection(max);
+    }
 
     // command channel
     let (tx, mut rx) = mpsc::channel::<Command>(1);

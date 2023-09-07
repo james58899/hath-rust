@@ -48,6 +48,7 @@ pub struct Settings {
     size_limit: AtomicU64,
     throttle_bytes: AtomicU64,
     disable_logging: AtomicBool,
+    max_connection: AtomicU64
 }
 
 pub struct InitSettings {
@@ -82,11 +83,20 @@ impl Settings {
     }
 
     pub fn max_connection(&self) -> u64 {
-        20 + min(480, self.throttle_bytes.load(Ordering::Relaxed) / 10000)
+        let max = self.max_connection.load(Ordering::Relaxed);
+        if max != 0 {
+            max
+        } else {
+            20 + min(480, self.throttle_bytes.load(Ordering::Relaxed) / 10000)
+        }
     }
 
     pub fn disable_logging(&self) -> bool {
         self.disable_logging.load(Ordering::Relaxed)
+    }
+
+    pub fn override_max_connection(&self, max: u64) {
+        self.max_connection.store(max, Ordering::Relaxed);
     }
 
     fn update(&self, settings: HashMap<String, String>) {
@@ -120,6 +130,7 @@ impl RPCClient {
                 size_limit: AtomicU64::new(u64::MAX),
                 throttle_bytes: AtomicU64::new(0),
                 disable_logging: AtomicBool::new(false),
+                max_connection: AtomicU64::new(0)
             }),
         }
     }
