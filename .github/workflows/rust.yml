@@ -17,6 +17,10 @@ jobs:
       CXX: clang-16
       CFLAGS: "-flto -fuse-ld=lld-16"
       CXXFLAGS: "-flto -fuse-ld=lld-16"
+      CARGO_HOST_LINKER: "clang-16"
+      CARGO_HOST_RUSTFLAGS: "-Clink-arg=-fuse-ld=lld-16"
+      CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS: "-Clinker-plugin-lto -Clinker=clang-16 -Clink-arg=-fuse-ld=lld-16"
+      CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_RUSTFLAGS: "-Clinker-plugin-lto -Clinker=clang-16 -Clink-arg=-fuse-ld=lld-16 -Clink-arg=--target=aarch64-unknown-linux-gnu"
     steps:
     - uses: actions/checkout@v3
     - name: Install build tools
@@ -37,19 +41,16 @@ jobs:
     - name: Install toolchain
       run: |
         rustup update
-        rustup target add aarch64-unknown-linux-gnu
+        rustup toolchain install nightly
+        rustup target add --toolchain nightly aarch64-unknown-linux-gnu
     - name: Build x86_64
-      env:
-        RUSTFLAGS: "-Clinker-plugin-lto -Clinker=clang-16 -Clink-arg=-fuse-ld=lld-16 -Clink-arg=--target=x86_64-unknown-linux-gnu"
-      run: cargo build --verbose --release --target=x86_64-unknown-linux-gnu
+      run: cargo +nightly -Ztarget-applies-to-host -Zhost-config build --verbose --release
     - uses: actions/upload-artifact@v3
       with:
         name: hath-rust-x86_64
-        path: target/x86_64-unknown-linux-gnu/release/hath-rust
+        path: target/release/hath-rust
     - name: Build aarch64
-      env:
-        RUSTFLAGS: "-Clinker-plugin-lto -Clinker=clang-16 -Clink-arg=-fuse-ld=lld-16 -Clink-arg=--target=aarch64-unknown-linux-gnu"
-      run: cargo build --verbose --release --target=aarch64-unknown-linux-gnu
+      run: cargo +nightly -Ztarget-applies-to-host -Zhost-config build --verbose --release --target=aarch64-unknown-linux-gnu
     - uses: actions/upload-artifact@v3
       with:
         name: hath-rust-aarch64
