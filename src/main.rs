@@ -22,6 +22,7 @@ use futures::TryFutureExt;
 use log::{error, info, warn};
 #[cfg(target_env = "msvc")]
 use mimalloc::MiMalloc;
+use once_cell::sync::Lazy;
 use openssl::{
     pkcs12::ParsedPkcs12_2,
     ssl::{ClientHelloResponse, SslAcceptor, SslAcceptorBuilder, SslMethod, SslOptions},
@@ -66,10 +67,24 @@ static GLOBAL: Jemalloc = Jemalloc;
 #[global_allocator]
 static GLOBAL: MiMalloc = MiMalloc;
 
+static VERSION: Lazy<String> = Lazy::new(|| {
+    format!(
+        "{}-{} {}",
+        built_info::PKG_VERSION,
+        built_info::GIT_COMMIT_HASH_SHORT.unwrap_or("unknown"),
+        built_info::BUILT_TIME_UTC
+    )
+});
 static CLIENT_VERSION: &str = "1.6.1";
 static MAX_KEY_TIME_DRIFT: RangeInclusive<i64> = -300..=300;
 
+mod built_info {
+    // The file has been placed there by the build script.
+    include!(concat!(env!("OUT_DIR"), "/built.rs"));
+}
+
 #[derive(Parser)]
+#[command(version = VERSION.as_str())]
 struct Args {
     // Overrides the port set in the client's settings.
     #[arg(long)]
@@ -139,7 +154,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
         logger.config().flush(true);
     }
 
-    info!("Hentai@Home {} (Rust) starting up", CLIENT_VERSION);
+    info!(
+        "Hentai@Home {} (Rust {}-{}) starting up",
+        CLIENT_VERSION,
+        built_info::PKG_VERSION,
+        built_info::GIT_COMMIT_HASH_SHORT.unwrap_or("unknown")
+    );
 
     let (id, key) = match read_credential(data_dir).await {
         Some(i) => i,
