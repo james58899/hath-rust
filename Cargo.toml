@@ -38,7 +38,7 @@ mimalloc = { version = "0.1", default-features = false }
 
 [build-dependencies]
 built = { version = "0.6", features = ["git2", "chrono", "semver"] }
-openssl-src = { version = "111", features = ["weak-crypto"] }
+openssl-src = { version = "300", features = ["weak-crypto"] }
 
 [profile.release]
 lto = true
