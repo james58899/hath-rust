@@ -2,11 +2,7 @@
 FROM --platform=linux/amd64 rust:bookworm AS builder
 
 ARG LLVM_VERSION=16
-
 ENV CC=clang-${LLVM_VERSION} CXX=clang-${LLVM_VERSION} CFLAGS="-flto -fuse-ld=lld-${LLVM_VERSION}" CXXFLAGS="-flto -fuse-ld=lld-${LLVM_VERSION}"
-ENV CARGO_HOST_LINKER=clang-${LLVM_VERSION} CARGO_HOST_RUSTFLAGS="-Clink-arg=-fuse-ld=lld-${LLVM_VERSION}"
-ENV CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS="-Clinker-plugin-lto -Clinker=clang-${LLVM_VERSION} -Clink-arg=-fuse-ld=lld-${LLVM_VERSION}"
-ENV CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_RUSTFLAGS="-Clinker-plugin-lto -Clinker=clang-${LLVM_VERSION} -Clink-arg=-fuse-ld=lld-${LLVM_VERSION} -Clink-arg=--target=aarch64-unknown-linux-gnu"
 
 WORKDIR /usr/src/myapp
 RUN echo "deb http://apt.llvm.org/bookworm/ llvm-toolchain-bookworm-${LLVM_VERSION} main" > /etc/apt/sources.list.d/llvm.list && \
@@ -19,9 +15,11 @@ RUN --mount=type=cache,target=/root/.cargo cargo fetch
 ARG TARGETARCH
 RUN --mount=type=cache,target=/root/.cargo --mount=type=cache,target=/usr/src/myapp/target,id=target-$TARGETARCH \
     if [ "$TARGETARCH" = "arm64" ] ; then \
+        CARGO_HOST_LINKER=clang-${LLVM_VERSION} CARGO_HOST_RUSTFLAGS="-Clink-arg=-fuse-ld=lld-${LLVM_VERSION}" \
+        CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_RUSTFLAGS="-Clinker-plugin-lto -Clinker=clang-${LLVM_VERSION} -Clink-arg=-fuse-ld=lld-${LLVM_VERSION} -Clink-arg=--target=aarch64-unknown-linux-gnu" \
         cargo +nightly -Ztarget-applies-to-host -Zhost-config install --target=aarch64-unknown-linux-gnu --path . ; \
     else \
-        cargo +nightly -Ztarget-applies-to-host -Zhost-config install --path . ; \
+        RUSTFLAGS="-Clinker-plugin-lto -Clinker=clang-${LLVM_VERSION} -Clink-arg=-fuse-ld=lld-${LLVM_VERSION}" cargo install --path . ; \
     fi
 
 FROM debian:bookworm-slim
