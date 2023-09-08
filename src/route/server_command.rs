@@ -1,4 +1,7 @@
-use std::time::{Duration, Instant};
+use std::{
+    cmp::max,
+    time::{Duration, Instant},
+};
 
 use actix_web::{route, web::Data, HttpRequest, HttpResponse, Responder};
 use actix_web_lab::extract::Path;
@@ -84,11 +87,17 @@ async fn servercmd(
                     .as_str(),
                 )
                 .unwrap();
-                debug!("Test thread: {}", url);
+                debug!("Speedtest thread start: {}", url);
                 let reqwest = data.reqwest.clone();
                 requests.push(tokio::spawn(async move {
                     for retry in 0..3 {
-                        let request = reqwest.get(url.clone()).header(CONNECTION, HeaderValue::from_static("Close")).timeout(Duration::from_secs(60));
+                        if retry > 0 {
+                            debug!("Retrying.. ({} tries left)", 3 - retry);
+                        }
+                        let request = reqwest
+                            .get(url.clone())
+                            .header(CONNECTION, HeaderValue::from_static("Close"))
+                            .timeout(Duration::from_secs(60));
                         match request.send().await.and_then(|r| r.error_for_status()) {
                             Ok(res) => {
                                 let start = Instant::now();
@@ -98,14 +107,16 @@ async fn servercmd(
 
                                 // Check response size as excepted
                                 if response_size.is_ok() && response_size.unwrap() == size as usize {
-                                    return Some(start.elapsed());
+                                    let time = start.elapsed();
+                                    let ms = time.as_millis();
+                                    debug!("Speedtest thread done: {}ms ({:.2} KB/s)", ms, size as f64 / max(ms, 1) as f64);
+                                    return Some(time);
                                 }
                             }
                             Err(err) => {
                                 debug!("Connection error: {}", err);
                             }
                         }
-                        debug!("Retrying.. ({} tries left)", 3 - retry);
                     }
                     debug!("Exhaused retries or aborted getting {}", url);
                     None
@@ -123,9 +134,10 @@ async fn servercmd(
                 };
             }
 
-            let repsonse = format!("OK:{}-{}", success, total_time.as_millis());
-            debug!("response: {}", repsonse);
-            HttpResponse::Ok().body(repsonse)
+            let ms = total_time.as_millis();
+            let speed = (size * count as u32) as f64 / max(ms, 1) as f64;
+            debug!("Speedtest result: success {}/{}, average speed {:.2} KB/s", success, count, speed);
+            HttpResponse::Ok().body(format!("OK:{}-{}", success, ms))
         }
         "speed_test" => random_response(
             parse_additional(&additional)
