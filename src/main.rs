@@ -113,6 +113,9 @@ struct Args {
 
     #[arg(long)]
     max_connection: Option<u64>,
+
+    #[arg(long, default_value_t = false)]
+    disable_ip_origin_check: bool,
 }
 
 type DownloadState = RwLock<HashMap<[u8; 20], (Arc<TempPath>, watch::Receiver<u64>)>>;
@@ -160,7 +163,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         Some(i) => i,
         None => todo!("Setup client"),
     };
-    let client = Arc::new(RPCClient::new(id, &key));
+    let client = Arc::new(RPCClient::new(id, &key, args.disable_ip_origin_check));
     let init_settings = client.login().await?;
 
     let (shutdown_send, shutdown_recv) = mpsc::unbounded_channel::<()>();

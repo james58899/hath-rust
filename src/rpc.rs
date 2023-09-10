@@ -48,7 +48,8 @@ pub struct Settings {
     size_limit: AtomicU64,
     throttle_bytes: AtomicU64,
     disable_logging: AtomicBool,
-    max_connection: AtomicU64
+    max_connection: AtomicU64,
+    disable_ip_check: bool,
 }
 
 pub struct InitSettings {
@@ -117,7 +118,7 @@ impl Settings {
 }
 
 impl RPCClient {
-    pub fn new(id: i32, key: &str) -> Self {
+    pub fn new(id: i32, key: &str, disable_ip_check: bool) -> Self {
         Self {
             api_base: RwLock::new(Url::parse(format!("http://{DEFAULT_SERVER}/15/rpc?clientbuild={API_VERSION}").as_str()).unwrap()),
             clock_offset: AtomicI64::new(0),
@@ -130,7 +131,8 @@ impl RPCClient {
                 size_limit: AtomicU64::new(u64::MAX),
                 throttle_bytes: AtomicU64::new(0),
                 disable_logging: AtomicBool::new(false),
-                max_connection: AtomicU64::new(0)
+                max_connection: AtomicU64::new(0),
+                disable_ip_check,
             }),
         }
     }
@@ -303,7 +305,7 @@ The program will now terminate.
     }
 
     pub fn is_vaild_rpc_server(&self, ip: &str) -> bool {
-        self.rpc_servers.read().iter().any(|s| s == ip)
+        self.settings.disable_ip_check || self.rpc_servers.read().iter().any(|s| s == ip)
     }
 
     pub async fn sr_fetch(&self, file_index: &str, xres: &str, file_id: &str) -> Option<Vec<String>> {
