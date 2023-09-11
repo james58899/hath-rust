@@ -149,7 +149,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     create_dirs(vec![&data_dir, &log_dir, &cache_dir, &temp_dir, &download_dir]).await?;
 
     // Init logger
-    let logger = Logger::init(log_dir).unwrap();
+    let mut logger = Logger::init(log_dir).unwrap();
     logger.config().write_info(!args.disable_logging).flush(args.flush_log);
 
     info!(

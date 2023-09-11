@@ -7,6 +7,7 @@ use std::{
 };
 
 use chrono::{SecondsFormat, Utc};
+use futures::executor::block_on;
 use log::{info, Level, LevelFilter, Metadata, Record, SetLoggerError};
 use tokio::{
     fs::{rename, try_exists, File},
@@ -22,7 +23,7 @@ use tokio::{
 pub struct Logger {
     config: Arc<LoggerConfig>,
     shutdown: Arc<Notify>,
-    handle: JoinHandle<()>,
+    handle: Option<JoinHandle<()>>,
 }
 
 pub struct LoggerConfig {
@@ -50,7 +51,7 @@ impl Logger {
         let logger = Self {
             config: config.clone(),
             shutdown,
-            handle,
+            handle: Some(handle),
         };
 
         log::set_boxed_logger(Box::new(worker))
@@ -62,10 +63,20 @@ impl Logger {
         self.config.clone()
     }
 
-    pub async fn shutdown(self) {
+    pub async fn shutdown(&mut self) {
         info!("Shutdown logger...");
         self.shutdown.notify_one();
-        let _ = self.handle.await;
+        if let Some(handle) = self.handle.take() {
+            let _ = handle.await;
+        }
+    }
+}
+
+impl Drop for Logger {
+    fn drop(&mut self) {
+        block_on(async {
+            self.shutdown().await;
+        });
     }
 }
 
