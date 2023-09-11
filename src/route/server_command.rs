@@ -135,8 +135,8 @@ async fn servercmd(
             }
 
             let ms = total_time.as_millis();
-            let speed = (size * success as u32) as f64 / max(ms, 1) as f64;
-            debug!("Speedtest result: success {}/{}, average speed {:.2} KB/s", success, count, speed);
+            let speed = (size * success) as f64 / ms.checked_div(success as u128).unwrap_or(1) as f64;
+            debug!("Speedtest result: success {}/{}, speed {:.2} KB/s", success, count, speed);
             HttpResponse::Ok().body(format!("OK:{}-{}", success, ms))
         }
         "speed_test" => random_response(
