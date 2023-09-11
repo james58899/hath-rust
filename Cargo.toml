@@ -37,7 +37,7 @@ tikv-jemallocator = { version = "0.5", features = ["background_threads", "unpref
 mimalloc = { version = "0.1", default-features = false }
 
 [build-dependencies]
-built = { version = "0.6", features = ["git2", "chrono", "semver"] }
+built = { version = "0.7", features = ["git2", "chrono", "semver"] }
 openssl-src = { version = "111", features = ["weak-crypto"] }
 
 [profile.release]
