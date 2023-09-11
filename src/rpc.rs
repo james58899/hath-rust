@@ -16,7 +16,7 @@ use futures::{executor::block_on, TryFutureExt};
 use log::{debug, error, info, warn};
 use openssl::{
     asn1::Asn1Time,
-    pkcs12::{ParsedPkcs12_2, Pkcs12},
+    pkcs12::{ParsedPkcs12_2, Pkcs12}, provider::Provider,
 };
 use parking_lot::{RwLock, RwLockUpgradableReadGuard};
 use rand::prelude::SliceRandom;
@@ -197,6 +197,7 @@ impl RPCClient {
     }
 
     pub async fn get_cert(&self) -> Option<ParsedPkcs12_2> {
+        let _provider = Provider::try_load(None, "legacy", true).unwrap();
         let cert = self
             .reqwest
             .get(self.build_url("get_cert", "", None))

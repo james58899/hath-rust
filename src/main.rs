@@ -391,7 +391,7 @@ fn create_ssl_acceptor(cert: &ParsedPkcs12_2) -> SslAcceptorBuilder {
         // Not have AES hardware acceleration, perfer ChaCha20.
         builder
             .set_cipher_list(
-                "ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:\
+                "@SECLEVEL=0:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:\
                 ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:\
                 ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:\
                 DHE-RSA-CHACHA20-POLY1305:DHE-RSA-AES128-GCM-SHA256:DHE-RSA-AES256-GCM-SHA384:\
@@ -413,7 +413,7 @@ fn create_ssl_acceptor(cert: &ParsedPkcs12_2) -> SslAcceptorBuilder {
 
         builder
             .set_cipher_list(
-                "ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:\
+                "@SECLEVEL=0:ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:\
                 ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:\
                 ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:\
                 DHE-RSA-AES128-GCM-SHA256:DHE-RSA-AES256-GCM-SHA384:DHE-RSA-CHACHA20-POLY1305:\
@@ -433,7 +433,7 @@ fn create_ssl_acceptor(cert: &ParsedPkcs12_2) -> SslAcceptorBuilder {
     builder.set_private_key(cert.pkey.as_ref().unwrap()).unwrap();
     builder.set_certificate(cert.cert.as_ref().unwrap()).unwrap();
     if let Some(i) = &cert.ca {
-        i.iter().rev().for_each(|j| builder.add_extra_chain_cert(j.to_owned()).unwrap());
+        i.iter().for_each(|j| builder.add_extra_chain_cert(j.to_owned()).unwrap());
     }
     builder
 }
