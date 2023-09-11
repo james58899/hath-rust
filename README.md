@@ -1,10 +1,15 @@
 # hath-rust
 
-Hentai@Home but rusty. **Under development, not recommended to use.** Unofficial.
+Hentai@Home but rusty.
+
+**Under development, stability is not guaranteed.**
+
+Unofficial.
 
 ## Features
 ### New
 Features not included in the official.
+* Lower memory usage
 * Parallel async cache scan
 * TLS 1.3
 * Seamless certificate update
@@ -16,12 +21,11 @@ Features that are included in the official and are working.
 * Gallery downloader
 * Speed test
 * Cache size management
-* logging
+* Logging
 
 ### Not works
 Included in the official release but not yet implemented.
 * Initialize client[^init]
-* Disable RPC IP check
 * Disk space check[^disk]
 
 ### No planned
