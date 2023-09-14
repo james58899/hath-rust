@@ -352,7 +352,9 @@ impl CacheManager {
             .await;
 
         if counter.load(Relaxed) == 0 && static_range.len() > 20 {
-            error!("This client has static ranges assigned to it, but the cache is empty. Check file permissions and file system integrity.");
+            error!(
+                "This client has static ranges assigned to it, but the cache is empty. Check file permissions and file system integrity."
+            );
             return Err(Error::new(std::io::ErrorKind::NotFound, "Cache is empty."));
         }
 
@@ -467,7 +469,11 @@ enum FileType {
     Jpeg,
     Png,
     Gif,
+    Mp4,
     Webm,
+    Webp,
+    Avif,
+    Jpegxl,
     Other(String),
 }
 
@@ -477,7 +483,11 @@ impl FileType {
             Self::Jpeg => mime::IMAGE_JPEG,
             Self::Png => mime::IMAGE_PNG,
             Self::Gif => mime::IMAGE_GIF,
+            Self::Mp4 => "video/mp4".parse().unwrap(),
             Self::Webm => "video/webm".parse().unwrap(),
+            Self::Webp => "image/webp".parse().unwrap(),
+            Self::Avif => "image/avif".parse().unwrap(),
+            Self::Jpegxl => "image/jxl".parse().unwrap(),
             Self::Other(_) => mime::APPLICATION_OCTET_STREAM,
         }
     }
@@ -487,7 +497,11 @@ impl FileType {
             Self::Jpeg => "jpg",
             Self::Png => "png",
             Self::Gif => "gif",
+            Self::Mp4 => "mp4",
             Self::Webm => "wbm",
+            Self::Webp => "wbp",
+            Self::Avif => "avf",
+            Self::Jpegxl => "jxl",
             Self::Other(s) => s,
         }
     }
@@ -505,7 +519,11 @@ impl From<&str> for FileType {
             "jpg" => Self::Jpeg,
             "png" => Self::Png,
             "gif" => Self::Gif,
+            "mp4" => Self::Mp4,
             "wbm" => Self::Webm,
+            "wbp" => Self::Webp,
+            "avf" => Self::Avif,
+            "jxl" => Self::Jpegxl,
             _ => Self::Other(s.to_string()),
         }
     }
@@ -523,11 +541,13 @@ pub struct CacheFileInfo {
 impl CacheFileInfo {
     pub fn from_file_id<T: AsRef<str>>(id: T) -> Option<CacheFileInfo> {
         let mut part = id.as_ref().split('-');
+        let none_res = part.clone().count() == 3;
+
         Some(CacheFileInfo {
             hash: <[u8; 20]>::from_hex(part.next()?).ok()?,
             size: part.next().and_then(|s| s.parse().ok())?,
-            xres: part.next().and_then(|s| s.parse().ok())?,
-            yres: part.next().and_then(|s| s.parse().ok())?,
+            xres: if none_res { 0 } else { part.next().and_then(|s| s.parse().ok())? },
+            yres: if none_res { 0 } else { part.next().and_then(|s| s.parse().ok())? },
             mime_type: part.next()?.into(),
         })
     }
@@ -543,10 +563,12 @@ impl CacheFileInfo {
 
     fn to_path(&self, cache_dir: &Path) -> PathBuf {
         let hash = hex::encode(self.hash);
-        cache_dir
-            .join(&hash[0..2])
-            .join(&hash[2..4])
-            .join(format!("{}-{}-{}-{}-{}", hash, self.size, self.xres, self.yres, self.mime_type))
+        let filename = if self.xres > 0 {
+            format!("{}-{}-{}-{}-{}", hash, self.size, self.xres, self.yres, self.mime_type)
+        } else {
+            format!("{}-{}-{}", hash, self.size, self.mime_type)
+        };
+        cache_dir.join(&hash[0..2]).join(&hash[2..4]).join(filename)
     }
 
     async fn get_file(&self, cache_dir: &Path) -> Option<PathBuf> {

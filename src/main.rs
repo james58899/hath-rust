@@ -75,7 +75,7 @@ static VERSION: Lazy<String> = Lazy::new(|| {
         built_info::BUILT_TIME_UTC
     )
 });
-static CLIENT_VERSION: &str = "1.6.1";
+static CLIENT_VERSION: &str = "1.6.2";
 static MAX_KEY_TIME_DRIFT: RangeInclusive<i64> = -300..=300;
 
 mod built_info {
@@ -277,8 +277,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 break;
             }
 
-            if counter % 11 == 0 {
-                client3.still_alive(false).await;
+            // Alive check every 110s
+            if counter % 11 == 0 && !client3.still_alive(false).await {
+                let _ = shutdown_send.send(()); // Check fail, shutdown.
             }
 
             // Check purge list every 7hr

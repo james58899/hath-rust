@@ -28,7 +28,7 @@ use crate::{
     util::{create_http_client, string_to_hash},
 };
 
-const API_VERSION: i32 = 154; // For server check capabilities.
+const API_VERSION: i32 = 160; // For server check capabilities.
 const DEFAULT_SERVER: &str = "rpc.hentaiathome.net";
 
 type RequestError = Box<dyn std::error::Error + Send + Sync>;
@@ -388,16 +388,20 @@ The program will now terminate.
         self.running.load(Ordering::Relaxed)
     }
 
-    pub async fn still_alive(&self, resume: bool) {
+    pub async fn still_alive(&self, resume: bool) -> bool {
         if let Ok(res) = self.send_action("still_alive", Some(if resume { "resume" } else { "" })).await {
             if res.is_ok() {
                 debug!("Successfully performed a stillAlive test for the server.");
+            } else if res.status == "TERM_BAD_NETWORK" {
+                error!("Client is shutting down since the network is misconfigured; correct firewall/forwarding settings then restart the client.");
+                return false; // Shutdown by RPC
             } else {
                 warn!("Failed stillAlive test: ({}) - will retry later", res.status);
             }
         } else {
             warn!("Failed to connect to the server for the stillAlive test. This is probably a temporary connection problem.");
         }
+        true
     }
 
     pub async fn notify_overload(&self) {
