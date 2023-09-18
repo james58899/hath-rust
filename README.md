@@ -25,7 +25,6 @@ Features that are included in the official and are working.
 
 ### Not works
 Included in the official release but not yet implemented.
-* Initialize client[^init]
 * Disk space check[^disk]
 
 ### No planned
@@ -33,6 +32,5 @@ Included in the official release but not yet implemented.
 * Bandwidth limit
 
 
-[^init]: Need to manually create a `client_login` file in the data directory.
 [^disk]: Only checks the cache size and does not aware of downloads or other space usages.
 [^h2]: Multiplexing is useless for H@H, and a large number of connections will take up more system resources.

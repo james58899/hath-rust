@@ -19,6 +19,10 @@ use actix_web::{
 };
 use clap::Parser;
 use futures::TryFutureExt;
+use inquire::{
+    validator::{ErrorMessage, Validation},
+    CustomType, Text,
+};
 use log::{error, info, warn};
 #[cfg(target_env = "msvc")]
 use mimalloc::MiMalloc;
@@ -28,11 +32,12 @@ use openssl::{
     ssl::{ClientHelloResponse, SslAcceptor, SslAcceptorBuilder, SslMethod, SslOptions},
 };
 use parking_lot::{Mutex, RwLock};
+use regex::Regex;
 use tempfile::TempPath;
 #[cfg(not(target_env = "msvc"))]
 use tikv_jemallocator::Jemalloc;
 use tokio::{
-    fs::File,
+    fs::{self, File},
     io::{AsyncBufReadExt, BufReader},
     runtime::Handle,
     signal::{self, unix::SignalKind},
@@ -159,9 +164,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
         built_info::GIT_COMMIT_HASH_SHORT.unwrap_or("unknown")
     );
 
-    let (id, key) = match read_credential(data_dir).await {
+    let (id, key) = match read_credential(&data_dir).await? {
         Some(i) => i,
-        None => todo!("Setup client"),
+        None => setup(&data_dir).await?,
     };
     let client = Arc::new(RPCClient::new(id, &key, args.disable_ip_origin_check));
     let init_settings = client.login().await?;
@@ -314,17 +319,66 @@ async fn main() -> Result<(), Box<dyn Error>> {
 /**
  * main helper
 */
-async fn read_credential<P: AsRef<Path>>(data_path: P) -> Option<(i32, String)> {
+async fn read_credential<P: AsRef<Path>>(data_path: P) -> Result<Option<(i32, String)>, Box<dyn Error>> {
     let path = data_path.as_ref().join("client_login");
-    let mut file = File::open(path.clone()).map_ok(|f| BufReader::new(f).lines()).await.ok()?; // TODO better error handle
-    let data = file.next_line().await.ok().flatten()?;
+    let data = match File::open(&path)
+        .and_then(|f| async { BufReader::new(f).lines().next_line().await })
+        .await
+    {
+        Ok(Some(data)) => data,
+        Ok(None) => return Ok(None),
+        Err(err) => {
+            error!("Encountered error when reading client_login: {}", path.display());
+            return Err(Box::new(err));
+        }
+    };
     let mut credential = data.split('-');
 
-    let id: i32 = credential.next()?.parse().ok()?;
-    let key = credential.next()?.to_owned();
+    let (id, key) = match credential.next().and_then(|s| s.parse::<i32>().ok()).zip(credential.next()) {
+        Some(v) => v,
+        None => return Ok(None),
+    };
 
     info!("Loaded login settings from {}", path.display());
-    Some((id, key))
+    Ok(Some((id, key.to_owned())))
+}
+
+async fn setup<P: AsRef<Path>>(data_path: P) -> Result<(i32, String), Box<dyn Error>> {
+    info!("Setup client");
+    sleep(Duration::from_secs(1)).await; // Wait logger
+
+    println!(
+        "
+Before you can use this client, you will have to register it at https://e-hentai.org/hentaiathome.php
+IMPORTANT: YOU NEED A SEPARATE IDENT FOR EACH CLIENT YOU WANT TO RUN.
+DO NOT ENTER AN IDENT THAT WAS ASSIGNED FOR A DIFFERENT CLIENT UNLESS IT HAS BEEN RETIRED.
+After registering, enter your ID and Key below to start your client.
+(You will only have to do this once.)
+"
+    );
+
+    let id = CustomType::<i32>::new("Enter Client ID:")
+        .with_error_message("Invalid Client ID. Please try again.")
+        .prompt()?;
+    let key = Text::new("Enter Client Key:")
+        .with_validator(|key: &_| {
+            if Regex::new("^[a-zA-Z0-9]{20}$").unwrap().is_match(key) {
+                Ok(Validation::Valid)
+            } else {
+                let message = "Invalid Client Key, it must be exactly 20 alphanumerical characters. Please try again.".to_owned();
+                Ok(Validation::Invalid(ErrorMessage::Custom(message)))
+            }
+        })
+        .prompt()?;
+
+    // Write client_login
+    let path = data_path.as_ref().join("client_login");
+    if let Err(err) = fs::write(&path, format!("{}-{}", id, key)).await {
+        error!("Error encountered when writing client_login: {}", path.display());
+        return Err(Box::new(err));
+    }
+
+    Ok((id, key))
 }
 
 fn create_server(port: u16, cert: ParsedPkcs12_2, data: AppState) -> (Server, watch::Sender<ParsedPkcs12_2>) {
