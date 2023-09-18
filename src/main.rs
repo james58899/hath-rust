@@ -331,7 +331,7 @@ async fn read_credential<P: AsRef<Path>>(data_path: P) -> Result<Option<(i32, St
         Ok(Some(data)) => data,
         Ok(None) => return Ok(None),
         Err(err) => {
-            error!("Encountered error when reading client_login: {}", path.display());
+            error!("Encountered error when reading client_login: {}", err);
             return Err(Box::new(err));
         }
     };
@@ -377,7 +377,7 @@ After registering, enter your ID and Key below to start your client.
     // Write client_login
     let path = data_path.as_ref().join("client_login");
     if let Err(err) = fs::write(&path, format!("{}-{}", id, key)).await {
-        error!("Error encountered when writing client_login: {}", path.display());
+        error!("Error encountered when writing client_login: {}", err);
         return Err(Box::new(err));
     }
 
