@@ -6,6 +6,9 @@ Hentai@Home but rusty.
 
 Unofficial.
 
+## Install
+Read the [Wiki](https://github.com/james58899/hath-rust/wiki/Install)
+
 ## Features
 ### New
 Features not included in the official.
