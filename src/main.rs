@@ -37,7 +37,7 @@ use tempfile::TempPath;
 #[cfg(not(target_env = "msvc"))]
 use tikv_jemallocator::Jemalloc;
 use tokio::{
-    fs::{self, File},
+    fs::{self, try_exists, File},
     io::{AsyncBufReadExt, BufReader},
     runtime::Handle,
     signal::{self, unix::SignalKind},
@@ -321,6 +321,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
 */
 async fn read_credential<P: AsRef<Path>>(data_path: P) -> Result<Option<(i32, String)>, Box<dyn Error>> {
     let path = data_path.as_ref().join("client_login");
+    if !try_exists(&path).await? {
+        return Ok(None);
+    }
     let data = match File::open(&path)
         .and_then(|f| async { BufReader::new(f).lines().next_line().await })
         .await
