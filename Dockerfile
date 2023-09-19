@@ -10,10 +10,9 @@ RUN echo "deb http://apt.llvm.org/bookworm/ llvm-toolchain-bookworm-${LLVM_VERSI
     apt-get install -y eatmydata && eatmydata apt-get install -y crossbuild-essential-arm64 clang-$LLVM_VERSION lldb-$LLVM_VERSION lld-$LLVM_VERSION clangd-$LLVM_VERSION && \
     rm -rf /var/lib/apt/lists/*
 RUN rustup toolchain install nightly && rustup target add --toolchain nightly aarch64-unknown-linux-gnu
-COPY . .
-RUN --mount=type=cache,target=/root/.cargo cargo fetch
+RUN --mount=type=bind,target=. --mount=type=cache,target=/root/.cargo cargo fetch
 ARG TARGETARCH
-RUN --mount=type=cache,target=/root/.cargo --mount=type=cache,target=/usr/src/myapp/target,id=target-$TARGETARCH \
+RUN --mount=type=bind,rw,target=. --mount=type=cache,target=/root/.cargo --mount=type=cache,target=target,id=target-$TARGETARCH \
     if [ "$TARGETARCH" = "arm64" ] ; then \
         CARGO_HOST_LINKER=clang-${LLVM_VERSION} CARGO_HOST_RUSTFLAGS="-Clink-arg=-fuse-ld=lld-${LLVM_VERSION}" \
         CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_RUSTFLAGS="-Clinker-plugin-lto -Clinker=clang-${LLVM_VERSION} -Clink-arg=-fuse-ld=lld-${LLVM_VERSION} -Clink-arg=--target=aarch64-unknown-linux-gnu" \
