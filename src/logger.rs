@@ -106,7 +106,7 @@ impl LoggerWorker {
 
             let mut err_lines: u32 = 0;
             let mut out_lines: u32 = 0;
-            let mut writer_err = match std::fs::File::create(log_err).map(File::from_std).map(BufWriter::new) {
+            let mut writer_err = match std::fs::File::create(log_err).map(File::from_std) {
                 Ok(w) => w,
                 Err(err) => {
                     eprintln!("Log create error: {:?}", err);
@@ -135,13 +135,10 @@ impl LoggerWorker {
                                 // log routate
                                 let _ = writer_err.shutdown().await;
                                 rotate_log(&[log_err]).await;
-                                writer_err = File::create(log_err).await.map(BufWriter::new).unwrap();
+                                writer_err = File::create(log_err).await.unwrap();
                                 err_lines = 0;
                             }
                             let _ = writer_err.write_all(&[log.message.as_bytes(), b"\n"].concat()).await;
-                            if config.flush.load(Ordering::Relaxed) {
-                                let _ = writer_err.flush().await;
-                            }
                         } else {
                             // stdout
                             println!("{}", log.message);
