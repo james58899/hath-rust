@@ -39,13 +39,13 @@ async fn hath(
 ) -> impl Responder {
     let additional = parse_additional(&additional);
 
-    let keystamp: Vec<&str> = additional.get("keystamp").map(|s| s.split('-').collect()).unwrap_or_default();
-    let file_index = additional.get("fileindex").map(|s| s.as_str()).unwrap_or("");
-    let xres = additional.get("xres").map(|s| s.as_str()).unwrap_or("");
+    let mut keystamp = additional.get("keystamp").map(String::as_str).unwrap_or_default().split('-');
+    let file_index = additional.get("fileindex").map(String::as_str).unwrap_or_default();
+    let xres = additional.get("xres").map(String::as_str).unwrap_or_default();
 
     // keystamp check
-    let time = keystamp.first().unwrap_or(&"");
-    let hash = keystamp.last().unwrap_or(&"");
+    let time = keystamp.next().unwrap_or_default();
+    let hash = keystamp.next().unwrap_or_default();
     let time_diff = &(data.rpc.get_timestemp() - time.parse::<i64>().unwrap_or_default());
     let hash_string = format!("{}-{}-{}-hotlinkthis", time, file_id, data.rpc.key());
     if time.is_empty() || hash.is_empty() || !TTL.contains(time_diff) || !string_to_hash(hash_string).starts_with(hash) {

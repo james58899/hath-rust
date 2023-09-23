@@ -16,7 +16,8 @@ use futures::{executor::block_on, TryFutureExt};
 use log::{debug, error, info, warn};
 use openssl::{
     asn1::Asn1Time,
-    pkcs12::{ParsedPkcs12_2, Pkcs12}, provider::Provider,
+    pkcs12::{ParsedPkcs12_2, Pkcs12},
+    provider::Provider,
 };
 use parking_lot::{RwLock, RwLockUpgradableReadGuard};
 use rand::prelude::SliceRandom;
@@ -583,12 +584,14 @@ impl ApiResponse {
     fn to_map(&self) -> HashMap<String, String> {
         let mut map = HashMap::new();
         for kv in &self.data {
-            let pair: Vec<&str> = kv.split('=').collect();
-            if pair.len() != 2 {
+            let mut pair = kv.split('=');
+            let k = pair.next();
+            let v = pair.next();
+            if k.is_none() || v.is_none() {
                 continue;
             }
 
-            map.insert(pair[0].to_string(), pair[1].to_string());
+            map.insert(k.unwrap().to_string(), v.unwrap().to_string());
         }
 
         map
