@@ -13,17 +13,17 @@ jobs:
   build:
     runs-on: ubuntu-latest
     env:
-      CC: clang-16
-      CXX: clang-16
-      CFLAGS: "-flto -fuse-ld=lld-16"
-      CXXFLAGS: "-flto -fuse-ld=lld-16"
+      CC: clang-17
+      CXX: clang-17
+      CFLAGS: "-flto -fuse-ld=lld-17"
+      CXXFLAGS: "-flto -fuse-ld=lld-17"
     steps:
     - uses: actions/checkout@v3
     - name: Install build tools
       run: |
         wget https://apt.llvm.org/llvm.sh
         chmod +x llvm.sh
-        sudo ./llvm.sh 16
+        sudo ./llvm.sh 17
         sudo apt-get install -y crossbuild-essential-arm64
     - uses: actions/cache@v3
       with:
@@ -41,7 +41,7 @@ jobs:
         rustup target add --toolchain nightly aarch64-unknown-linux-gnu
     - name: Build x86_64
       env:
-        RUSTFLAGS: "-Clinker-plugin-lto -Clinker=clang-16 -Clink-arg=-fuse-ld=lld-16"
+        RUSTFLAGS: "-Clinker-plugin-lto -Clinker=clang-17 -Clink-arg=-fuse-ld=lld-17"
       run: cargo build --verbose --release
     - uses: actions/upload-artifact@v3
       with:
@@ -49,9 +49,9 @@ jobs:
         path: target/release/hath-rust
     - name: Build aarch64
       env:
-        CARGO_HOST_LINKER: "clang-16"
-        CARGO_HOST_RUSTFLAGS: "-Clink-arg=-fuse-ld=lld-16"
-        CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_RUSTFLAGS: "-Clinker-plugin-lto -Clinker=clang-16 -Clink-arg=-fuse-ld=lld-16 -Clink-arg=--target=aarch64-unknown-linux-gnu"
+        CARGO_HOST_LINKER: "clang-17"
+        CARGO_HOST_RUSTFLAGS: "-Clink-arg=-fuse-ld=lld-17"
+        CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_RUSTFLAGS: "-Clinker-plugin-lto -Clinker=clang-17 -Clink-arg=-fuse-ld=lld-17 -Clink-arg=--target=aarch64-unknown-linux-gnu"
       run: cargo +nightly -Ztarget-applies-to-host -Zhost-config build --verbose --release --target=aarch64-unknown-linux-gnu
     - uses: actions/upload-artifact@v3
       with:

@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 FROM --platform=linux/amd64 rust:bookworm AS builder
 
-ARG LLVM_VERSION=16
+ARG LLVM_VERSION=17
 ENV CC=clang-${LLVM_VERSION} CXX=clang-${LLVM_VERSION} CFLAGS="-flto -fuse-ld=lld-${LLVM_VERSION}" CXXFLAGS="-flto -fuse-ld=lld-${LLVM_VERSION}"
 
 WORKDIR /usr/src/myapp
