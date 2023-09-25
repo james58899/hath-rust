@@ -22,5 +22,6 @@ RUN --mount=type=bind,rw,target=. --mount=type=cache,target=/root/.cargo --mount
     fi
 
 FROM debian:bookworm-slim
+WORKDIR /hath
 COPY --from=builder /usr/local/cargo/bin/hath-rust /usr/local/bin/hath-rust
 CMD ["hath-rust"]
