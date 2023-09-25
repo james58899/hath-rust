@@ -3,7 +3,6 @@ use std::{
     fmt::Display,
     fs::Metadata,
     io::Error,
-    os::unix::prelude::PermissionsExt,
     path::{Path, PathBuf},
     sync::{
         atomic::{AtomicU64, AtomicUsize, Ordering::Relaxed},
@@ -22,7 +21,7 @@ use openssl::sha::Sha1;
 use parking_lot::{Mutex, RwLock};
 use tempfile::TempPath;
 use tokio::{
-    fs::{copy, create_dir_all, metadata, read_dir, remove_dir_all, remove_file, rename, set_permissions, DirEntry, File},
+    fs::{copy, create_dir_all, metadata, read_dir, remove_dir_all, remove_file, rename, DirEntry, File},
     io::AsyncReadExt,
     spawn,
     sync::mpsc::UnboundedSender,
@@ -134,9 +133,7 @@ impl CacheManager {
         }
 
         // Fix permission
-        if cfg!(unix) {
-            _ = set_permissions(&path, PermissionsExt::from_mode(0o644)).await;
-        }
+        fix_permission(&path).await;
 
         self.mark_recently_accessed(info, false).await;
 
@@ -462,6 +459,19 @@ impl CacheManager {
             self.cache_date.lock().insert(dirs[0].0.to_path_buf(), new_oldest);
         }
     }
+}
+
+#[cfg(unix)]
+async fn fix_permission(path: &Path) {
+    use std::os::unix::prelude::PermissionsExt;
+    use tokio::fs::set_permissions;
+
+    _ = set_permissions(&path, PermissionsExt::from_mode(0o644)).await;
+}
+
+#[cfg(not(unix))]
+async fn fix_permission(_path: &Path) {
+    // Skip
 }
 
 #[derive(Clone, Hash, Eq, PartialEq)]

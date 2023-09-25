@@ -40,7 +40,7 @@ use tokio::{
     fs::{self, try_exists, File},
     io::{AsyncBufReadExt, BufReader},
     runtime::Handle,
-    signal::{self, unix::SignalKind},
+    signal,
     sync::{
         mpsc::{self, Sender, UnboundedReceiver},
         watch,
@@ -318,7 +318,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
 /**
  * main helper
-*/
+ */
 async fn read_credential<P: AsRef<Path>>(data_path: P) -> Result<Option<(i32, String)>, Box<dyn Error>> {
     let path = data_path.as_ref().join("client_login");
     if !try_exists(&path).await? {
@@ -446,7 +446,7 @@ fn create_ssl_acceptor(cert: &ParsedPkcs12_2) -> SslAcceptorBuilder {
     // From https://wiki.mozilla.org/Security/Server_Side_TLS#Old_backward_compatibility
     cpufeatures::new!(cpuid_aes, "aes");
     if !cpuid_aes::get() {
-        // Not have AES hardware acceleration, perfer ChaCha20.
+        // Not have AES hardware acceleration, prefer ChaCha20.
         builder
             .set_cipher_list(
                 "@SECLEVEL=0:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:\
@@ -496,14 +496,30 @@ fn create_ssl_acceptor(cert: &ParsedPkcs12_2) -> SslAcceptorBuilder {
     builder
 }
 
+#[cfg(unix)]
 async fn wait_shutdown_signal(mut shutdown_channel: UnboundedReceiver<()>) {
-    let mut sigint = signal::unix::signal(SignalKind::interrupt()).unwrap();
-    let mut sigterm = signal::unix::signal(SignalKind::terminate()).unwrap();
+    use tokio::signal::unix::{signal, SignalKind};
+
+    let mut sigterm = signal(SignalKind::terminate()).unwrap();
     tokio::select! {
         _ = signal::ctrl_c() => (),
-        _ = sigint.recv() => (),
         _ = sigterm.recv() => (),
         _ = shutdown_channel.recv() => (),
         else => ()
-    };
+    }
+}
+
+#[cfg(windows)]
+async fn wait_shutdown_signal(mut shutdown_channel: UnboundedReceiver<()>) {
+    use tokio::signal::windows::{ctrl_close, ctrl_shutdown};
+
+    let mut close = ctrl_close().unwrap();
+    let mut shutdown = ctrl_shutdown().unwrap();
+    tokio::select! {
+        _ = signal::ctrl_c() => (),
+        _ = close.recv() => (),
+        _ = shutdown.recv() => (),
+        _ = shutdown_channel.recv() => (),
+        else => ()
+    }
 }
