@@ -481,13 +481,18 @@ The program will now terminate.
     }
 
     async fn send_request<U: IntoUrl>(&self, url: U) -> Result<String, reqwest::Error> {
-        self.reqwest
+        let res = self.reqwest
             .get(url)
             .timeout(Duration::from_secs(600))
             .send()
-            .and_then(|res| async { res.error_for_status() })
-            .and_then(|res| res.text())
-            .await
+            .await?;
+
+        if let Err(err) = res.error_for_status_ref() {
+            warn!("Server response error: code={}, body={}", res.status(), res.text().await.unwrap_or_default());
+            return Err(err);
+        }
+
+        res.text().await
     }
 
     fn build_url(&self, action: &str, additional: &str, endpoint: Option<&str>) -> Url {
