@@ -60,8 +60,7 @@ async fn hath(
     if let Some(file) = data
         .cache_manager
         .get_file(&info)
-        .map(|f| async move { NamedFile::open_async(f?).await.ok() })
-        .flatten()
+        .then(|f| async move { tokio::task::spawn_blocking(|| NamedFile::open(f?).ok()).await.ok().flatten() })
         .await
     {
         let cache_header = CacheControl(vec![CacheDirective::Public, CacheDirective::MaxAge(31536000)])
@@ -184,7 +183,7 @@ async fn hath(
     builder.insert_header(CacheControl(vec![CacheDirective::Public, CacheDirective::MaxAge(31536000)]));
     builder.body(SizedStream::new(
         file_size,
-        stream! { // TODO bandwidth limit
+        stream! {
             let mut file = File::open(temp_path.as_ref()).await.unwrap();
             let mut read_off = 0;
             let mut write_off = *rx.borrow();
