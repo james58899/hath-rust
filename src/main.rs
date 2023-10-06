@@ -407,6 +407,7 @@ fn create_server(port: u16, cert: ParsedPkcs12_2, data: AppState) -> (Server, wa
     let server = HttpServer::new(move || {
         App::new()
             .app_data(app_data.clone())
+            .wrap(middleware::Timeout::new(Duration::from_secs(181)))
             .wrap(logger.clone())
             .wrap(connection_counter.clone())
             .wrap(DefaultHeaders::new().add((
