@@ -949,7 +949,7 @@ checksum = "7dfda62a12f55daeae5015f81b0baea145391cb4520f86c248fc615d72640d12"
 
 [[package]]
 name = "hath-rust"
-version = "1.0.2"
+version = "1.0.3"
 dependencies = [
  "actix-files",
  "actix-tls",
