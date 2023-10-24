@@ -91,34 +91,43 @@ mod built_info {
 #[derive(Parser)]
 #[command(version = VERSION.as_str())]
 struct Args {
-    // Overrides the port set in the client's settings.
+    /// Overrides the port set in the client's settings
     #[arg(long)]
     port: Option<u16>,
 
-    #[arg(long)]
-    cache_dir: Option<String>,
+    /// Cache data location
+    #[arg(long, default_value_t = String::from("cache"))]
+    cache_dir: String,
 
-    #[arg(long)]
-    data_dir: Option<String>,
+    /// Login data location
+    #[arg(long, default_value_t = String::from("data"))]
+    data_dir: String,
 
-    #[arg(long)]
-    download_dir: Option<String>,
+    /// Downloader save location
+    #[arg(long, default_value_t = String::from("download"))]
+    download_dir: String,
 
-    #[arg(long)]
-    log_dir: Option<String>,
+    /// Logs location
+    #[arg(long, default_value_t = String::from("log"))]
+    log_dir: String,
 
-    #[arg(long)]
-    temp_dir: Option<String>,
+    /// Temporary location for proxy request
+    #[arg(long, default_value_t = String::from("tmp"))]
+    temp_dir: String,
 
+    /// Disable writing non-error logs to file
     #[arg(long, default_value_t = false)]
     disable_logging: bool,
 
+    /// Flush the logs to disk every line
     #[arg(long, default_value_t = false)]
     flush_log: bool,
 
-    #[arg(long)]
-    max_connection: Option<u64>,
+    /// Override the max connection soft limit, should only be used in special cases
+    #[arg(long, default_value_t = 0)]
+    max_connection: u64,
 
+    /// Disable server command ip check
     #[arg(long, default_value_t = false)]
     disable_ip_origin_check: bool,
 }
@@ -145,16 +154,17 @@ pub enum Command {
 async fn main() -> Result<(), Box<dyn Error>> {
     let args = Args::parse();
 
-    let cache_dir = args.cache_dir.unwrap_or_else(|| "./cache".to_string());
-    let data_dir = args.data_dir.unwrap_or_else(|| "./data".to_string());
-    let download_dir = args.download_dir.unwrap_or_else(|| "./download".to_string());
-    let log_dir = args.log_dir.unwrap_or_else(|| "./log".to_string());
-    let temp_dir = args.temp_dir.unwrap_or_else(|| "./tmp".to_string());
-
-    create_dirs(vec![&data_dir, &log_dir, &cache_dir, &temp_dir, &download_dir]).await?;
+    create_dirs(vec![
+        &args.data_dir,
+        &args.cache_dir,
+        &args.cache_dir,
+        &args.temp_dir,
+        &args.download_dir,
+    ])
+    .await?;
 
     // Init logger
-    let mut logger = Logger::init(log_dir).unwrap();
+    let mut logger = Logger::init(args.log_dir).unwrap();
     logger.config().write_info(!args.disable_logging).flush(args.flush_log);
 
     info!(
@@ -164,20 +174,23 @@ async fn main() -> Result<(), Box<dyn Error>> {
         built_info::GIT_COMMIT_HASH_SHORT.unwrap_or("unknown")
     );
 
-    let (id, key) = match read_credential(&data_dir).await? {
+    let (id, key) = match read_credential(&args.data_dir).await? {
         Some(i) => i,
-        None => setup(&data_dir).await?,
+        None => setup(&args.data_dir).await?,
     };
-    let client = Arc::new(RPCClient::new(id, &key, args.disable_ip_origin_check));
+    let client = Arc::new(RPCClient::new(id, &key, args.disable_ip_origin_check, args.max_connection));
     let init_settings = client.login().await?;
 
     let (shutdown_send, shutdown_recv) = mpsc::unbounded_channel::<()>();
     let settings = client.settings();
-    let cache_manager = CacheManager::new(cache_dir, temp_dir, settings.clone(), &init_settings, shutdown_send.clone()).await?;
-
-    if let Some(max) = args.max_connection {
-        settings.override_max_connection(max);
-    }
+    let cache_manager = CacheManager::new(
+        args.cache_dir,
+        args.temp_dir,
+        settings.clone(),
+        &init_settings,
+        shutdown_send.clone(),
+    )
+    .await?;
 
     // command channel
     let (tx, mut rx) = mpsc::channel::<Command>(1);
@@ -251,7 +264,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 Command::StartDownloader => {
                     let mut downloader = downloader2.lock();
                     if downloader.is_none() {
-                        let new = GalleryDownloader::new(client2.clone(), &download_dir);
+                        let new = GalleryDownloader::new(client2.clone(), &args.download_dir);
                         let downloader3 = downloader2.clone();
                         *downloader = Some(tokio::spawn(async move {
                             new.run().await;

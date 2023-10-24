@@ -97,10 +97,6 @@ impl Settings {
         self.disable_logging.load(Ordering::Relaxed)
     }
 
-    pub fn override_max_connection(&self, max: u64) {
-        self.max_connection.store(max, Ordering::Relaxed);
-    }
-
     fn update(&self, settings: HashMap<String, String>) {
         if let Some(size) = settings.get("disklimit_bytes").and_then(|s| s.parse().ok()) {
             self.size_limit.store(size, Ordering::Relaxed);
@@ -119,7 +115,14 @@ impl Settings {
 }
 
 impl RPCClient {
-    pub fn new(id: i32, key: &str, disable_ip_check: bool) -> Self {
+    pub fn new(id: i32, key: &str, disable_ip_check: bool, max_connection: u64) -> Self {
+        if disable_ip_check {
+            warn!("Disable server command ip check!");
+        }
+        if max_connection > 0 {
+            warn!("Override max connection: {}", max_connection);
+        }
+
         Self {
             api_base: RwLock::new(Url::parse(format!("http://{DEFAULT_SERVER}/15/rpc?clientbuild={API_VERSION}").as_str()).unwrap()),
             clock_offset: AtomicI64::new(0),
@@ -132,7 +135,7 @@ impl RPCClient {
                 size_limit: AtomicU64::new(u64::MAX),
                 throttle_bytes: AtomicU64::new(0),
                 disable_logging: AtomicBool::new(false),
-                max_connection: AtomicU64::new(0),
+                max_connection: AtomicU64::new(max_connection),
                 disable_ip_check,
             }),
         }
