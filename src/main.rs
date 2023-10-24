@@ -311,6 +311,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
             counter = counter.wrapping_add(1);
             next_run = Instant::now() + Duration::from_secs(10);
+            log::logger().flush(); // Flush log every 10s
         }
     });
 

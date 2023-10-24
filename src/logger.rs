@@ -22,7 +22,7 @@ use tokio::{
 
 pub struct Logger {
     config: Arc<LoggerConfig>,
-    shutdown: Arc<Notify>,
+    worker: Arc<LoggerWorker>,
     handle: Option<JoinHandle<()>>,
 }
 
@@ -32,6 +32,8 @@ pub struct LoggerConfig {
 }
 
 struct LoggerWorker {
+    flush: Arc<Notify>,
+    shutdown: Arc<Notify>,
     tx: UnboundedSender<LoggerMessage>,
 }
 
@@ -47,10 +49,11 @@ impl Logger {
             flush: false.into(),
         });
 
-        let (worker, shutdown, handle) = LoggerWorker::new(log_dir, config.clone());
+        let (worker, handle) = LoggerWorker::new(log_dir, config.clone());
+        let worker = Arc::new(worker);
         let logger = Self {
             config: config.clone(),
-            shutdown,
+            worker: worker.clone(),
             handle: Some(handle),
         };
 
@@ -65,7 +68,7 @@ impl Logger {
 
     pub async fn shutdown(&mut self) {
         info!("Shutdown logger...");
-        self.shutdown.notify_one();
+        self.worker.shutdown.notify_one();
         if let Some(handle) = self.handle.take() {
             let _ = handle.await;
         }
@@ -93,10 +96,12 @@ impl LoggerConfig {
 }
 
 impl LoggerWorker {
-    fn new<P: AsRef<Path>>(log_dir: P, config: Arc<LoggerConfig>) -> (Self, Arc<Notify>, JoinHandle<()>) {
+    fn new<P: AsRef<Path>>(log_dir: P, config: Arc<LoggerConfig>) -> (Self, JoinHandle<()>) {
+        let flush = Arc::new(Notify::new());
         let shutdown = Arc::new(Notify::new());
         let (tx, mut rx) = unbounded_channel::<LoggerMessage>();
         let log_dir = log_dir.as_ref().to_owned();
+        let flush2 = flush.clone();
         let shutdown2 = shutdown.clone();
         let worker = tokio::spawn(async move {
             let log_out = &log_dir.join("log_out");
@@ -160,6 +165,9 @@ impl LoggerWorker {
                             }
                         }
                     }
+                    _ = flush2.notified() => {
+                        let _ = writer_out.flush().await;
+                    }
                     _ = shutdown2.notified() => {
                         rx.close()
                     }
@@ -167,7 +175,7 @@ impl LoggerWorker {
             }
         });
 
-        (Self { tx }, shutdown, worker)
+        (Self { tx, flush, shutdown }, worker)
     }
 }
 
@@ -195,7 +203,9 @@ impl log::Log for LoggerWorker {
         });
     }
 
-    fn flush(&self) {}
+    fn flush(&self) {
+        self.flush.notify_one();
+    }
 }
 
 async fn rotate_log(files: &[&PathBuf]) {
