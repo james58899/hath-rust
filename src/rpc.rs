@@ -109,8 +109,6 @@ impl Settings {
         if let Some(disabled) = settings.get("disable_logging").and_then(|s| s.parse().ok()) {
             self.disable_logging.store(disabled, Ordering::Relaxed);
         }
-
-        // TODO update other settings
     }
 }
 
@@ -193,10 +191,12 @@ impl RPCClient {
                 static_range,
             })
         } else {
-            Err(Error::ApiResponseFail {
+            let err = Error::ApiResponseFail {
                 fail_code: res.status,
                 message: res.data.join("\n"),
-            })
+            };
+            error!("Login failed: {}", err);
+            Err(err)
         }
     }
 
@@ -441,10 +441,10 @@ The program will now terminate.
             let min_version = data.get("min_client_build").and_then(|s| s.parse().ok());
             let new_version = data.get("cur_client_build").and_then(|s| s.parse().ok());
 
-            if min_version.is_none() || new_version.is_none() {
-                Ok(None)
+            if let (Some(min), Some(new)) = (min_version, new_version) {
+                Ok(Some((min, new)))
             } else {
-                Ok(Some((min_version.unwrap(), new_version.unwrap())))
+                Ok(None)
             }
         } else {
             Err(Error::ApiResponseFail {
@@ -484,14 +484,14 @@ The program will now terminate.
     }
 
     async fn send_request<U: IntoUrl>(&self, url: U) -> Result<String, reqwest::Error> {
-        let res = self.reqwest
-            .get(url)
-            .timeout(Duration::from_secs(600))
-            .send()
-            .await?;
+        let res = self.reqwest.get(url).timeout(Duration::from_secs(600)).send().await?;
 
         if let Err(err) = res.error_for_status_ref() {
-            warn!("Server response error: code={}, body={}", res.status(), res.text().await.unwrap_or_default());
+            warn!(
+                "Server response error: code={}, body={}",
+                res.status(),
+                res.text().await.unwrap_or_default()
+            );
             return Err(err);
         }
 

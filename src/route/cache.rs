@@ -71,7 +71,7 @@ async fn hath(
             .disable_content_disposition()
             .set_content_type(info.mime_type())
             .into_response(&req);
-        res.headers_mut().insert(cache_header.0, cache_header.1); // TODO bandwidth limit
+        res.headers_mut().insert(cache_header.0, cache_header.1);
         return res;
     }
 
@@ -80,8 +80,8 @@ async fn hath(
 
     // Check if the file is already downloading
     let download_state = data.download_state.read().get(&info.hash()).cloned();
-    let (temp_path, mut rx) = if download_state.is_some() {
-        download_state.unwrap()
+    let (temp_path, mut rx) = if let Some(state) = download_state {
+        state
     } else {
         let temp_path = Arc::new(data.cache_manager.create_temp_file().await);
         let (tx, rx) = watch::channel(0); // Download progress
