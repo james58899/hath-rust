@@ -26,7 +26,7 @@ parking_lot = { version = "0.12", features = ["hardware-lock-elision", "deadlock
 pin-project-lite = "0.2"
 rand = { version = "0.8", default-features = false, features = ["small_rng"] }
 regex = "1.10"
-reqwest = { version = "0.11", default-features = false, features = ["rustls-tls", "stream"] }
+reqwest = { version = "0.11", default-features = false, features = ["rustls-tls", "stream", "socks"] }
 tempfile = "3.8"
 tokio = { version = "1", features = ["full", "parking_lot"] }
 tokio-stream = { version = "0.1", default-features = false, features = ["fs"] }

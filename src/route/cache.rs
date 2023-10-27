@@ -1,4 +1,4 @@
-use std::{io::SeekFrom, ops::RangeInclusive, sync::Arc};
+use std::{io::SeekFrom, ops::RangeInclusive, sync::Arc, time::Duration};
 
 use actix_files::NamedFile;
 use actix_web::{
@@ -25,7 +25,7 @@ use tokio::{
 use crate::{
     cache_manager::CacheFileInfo,
     route::{forbidden, parse_additional},
-    util::string_to_hash,
+    util::{create_http_client, string_to_hash},
     AppState,
 };
 
@@ -120,8 +120,17 @@ async fn hath(
                 };
 
                 let mut download = 0;
-                let request = data.reqwest.get(sources.next().unwrap());
-                if let Ok(mut stream) = request.send().await.and_then(|r| r.error_for_status()).map(|r| r.bytes_stream()) {
+                let source = sources.next().unwrap();
+                let mut request = data.reqwest.get(source).send().await;
+                if let Err(ref err) = request {
+                    error!("Cache download error: {}", err);
+
+                    // Retry without proxy
+                    if data.has_proxy && err.is_connect() {
+                        request = create_http_client(Duration::from_secs(30), None).get(source).send().await;
+                    }
+                };
+                if let Ok(mut stream) = request.and_then(|r| r.error_for_status()).map(|r| r.bytes_stream()) {
                     while let Some(bytes) = stream.next().await {
                         let bytes = match &bytes {
                             Ok(it) => it,

@@ -33,6 +33,7 @@ use openssl::{
 };
 use parking_lot::{Mutex, RwLock};
 use regex::Regex;
+use reqwest::Proxy;
 use tempfile::TempPath;
 #[cfg(not(target_env = "msvc"))]
 use tikv_jemallocator::Jemalloc;
@@ -130,6 +131,10 @@ struct Args {
     /// Disable server command ip check
     #[arg(long, default_value_t = false)]
     disable_ip_origin_check: bool,
+
+    /// Configure proxy for fetch cache
+    #[arg(long)]
+    proxy: Option<String>,
 }
 
 type DownloadState = RwLock<HashMap<[u8; 20], (Arc<TempPath>, watch::Receiver<u64>)>>;
@@ -141,6 +146,7 @@ struct AppState {
     download_state: DownloadState,
     cache_manager: Arc<CacheManager>,
     command_channel: Sender<Command>,
+    has_proxy: bool,
 }
 
 pub enum Command {
@@ -192,18 +198,32 @@ async fn main() -> Result<(), Box<dyn Error>> {
     )
     .await?;
 
-    // command channel
+    // Proxy
+    let proxy = match args.proxy.as_ref().map(Proxy::all) {
+        Some(Ok(proxy)) => {
+            info!("Using proxy for fetch cache: {}", args.proxy.unwrap());
+            Some(proxy)
+        }
+        Some(Err(err)) => {
+            error!("Parser proxy setting error: {}", err);
+            None
+        }
+        None => None,
+    };
+    let has_proxy = proxy.is_some();
+    // Command channel
     let (tx, mut rx) = mpsc::channel::<Command>(1);
     let (server, cert_changer) = create_server(
         args.port.unwrap_or_else(|| init_settings.client_port()),
         client.get_cert().await.unwrap(),
         AppState {
             runtime: Handle::current(),
-            reqwest: create_http_client(Duration::from_secs(30)),
+            reqwest: create_http_client(Duration::from_secs(30), proxy),
             rpc: client.clone(),
             download_state: Default::default(),
             cache_manager: cache_manager.clone(),
             command_channel: tx.clone(),
+            has_proxy,
         },
     );
     let server_handle = server.handle();

@@ -15,7 +15,7 @@ use reqwest::{
 
 use crate::{
     route::{forbidden, parse_additional, speed_test::random_response},
-    util::string_to_hash,
+    util::{create_http_client, string_to_hash},
     AppState, Command, MAX_KEY_TIME_DRIFT,
 };
 
@@ -88,16 +88,13 @@ async fn servercmd(
                 )
                 .unwrap();
                 debug!("Speedtest thread start: {}", url);
-                let reqwest = data.reqwest.clone();
+                let reqwest = create_http_client(Duration::from_secs(60), None); // No proxy http client
                 requests.push(tokio::spawn(async move {
                     for retry in 0..3 {
                         if retry > 0 {
                             debug!("Retrying.. ({} tries left)", 3 - retry);
                         }
-                        let request = reqwest
-                            .get(url.clone())
-                            .header(CONNECTION, HeaderValue::from_static("Close"))
-                            .timeout(Duration::from_secs(60));
+                        let request = reqwest.get(url.clone()).header(CONNECTION, HeaderValue::from_static("Close"));
                         match request.send().await.and_then(|r| r.error_for_status()) {
                             Ok(res) => {
                                 let start = Instant::now();

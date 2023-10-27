@@ -35,7 +35,7 @@ impl GalleryDownloader {
     pub fn new<P: AsRef<Path>>(client: Arc<RPCClient>, download_dir: P) -> GalleryDownloader {
         GalleryDownloader {
             client,
-            reqwest: util::create_http_client(Duration::from_secs(300)),
+            reqwest: util::create_http_client(Duration::from_secs(300), None),
             download_dir: download_dir.as_ref().to_path_buf(),
         }
     }

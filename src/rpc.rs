@@ -126,7 +126,7 @@ impl RPCClient {
             clock_offset: AtomicI64::new(0),
             id,
             key: key.to_string(),
-            reqwest: create_http_client(Duration::from_secs(600)),
+            reqwest: create_http_client(Duration::from_secs(600), None),
             rpc_servers: RwLock::new(vec![]),
             running: AtomicBool::new(false),
             settings: Arc::new(Settings {
