@@ -7,8 +7,8 @@ build = "build.rs"
 [dependencies]
 actix-files = "0.6"
 actix-tls = { version = "*", default-features = false, features = ["accept"] }
-actix-web = { version = "4.3", default-features = false, features = ["macros", "openssl"] }
-actix-web-lab = "0.19"
+actix-web = { version = "4.4", default-features = false, features = ["macros", "openssl"] }
+actix-web-lab = "0.20"
 async-stream = "0.3"
 chrono = "0.4"
 clap = { version = "4.4", features = ["derive", "wrap_help"] }
@@ -17,17 +17,17 @@ filesize = "0.2"
 filetime = "0.2"
 futures = "0.3"
 hex = "0.4"
-inquire = "0.6.2"
+inquire = "0.6"
 log = { version = "0.4", features = ["std"] }
 mime = "0.3"
-once_cell = "1.18.0"
+once_cell = "1.18"
 openssl = { version = "*", features = ["vendored"] }
 parking_lot = { version = "0.12", features = ["hardware-lock-elision", "deadlock_detection"] }
 pin-project-lite = "0.2"
 rand = { version = "0.8", default-features = false, features = ["small_rng"] }
-regex = "1.9"
+regex = "1.10"
 reqwest = { version = "0.11", default-features = false, features = ["rustls-tls", "stream"] }
-tempfile = "3.7"
+tempfile = "3.8"
 tokio = { version = "1", features = ["full", "parking_lot"] }
 tokio-stream = { version = "0.1", default-features = false, features = ["fs"] }
 
