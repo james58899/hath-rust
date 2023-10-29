@@ -103,8 +103,9 @@ async fn hath(
         data.runtime.clone().spawn(async move {
             let mut hasher = Sha1::new();
             let mut progress = 0;
+            let mut reqwest = data.reqwest.clone();
             let mut sources = sources.iter().cycle();
-            'retry: for _ in 0..3 {
+            'retry: for retry in 0..3 {
                 let mut file = match OpenOptions::new().write(true).create(true).open(temp_path2.as_ref()).await {
                     Ok(mut f) => {
                         if let Err(err) = f.seek(SeekFrom::Start(progress)).await {
@@ -119,23 +120,26 @@ async fn hath(
                     }
                 };
 
-                let mut download = 0;
+                // Send request
                 let source = sources.next().unwrap();
-                let mut request = data.reqwest.get(source).send().await;
+                let request = reqwest.get(source).send().await;
                 if let Err(ref err) = request {
-                    error!("Cache download error: {}", err);
+                    error!("Cache download fail: url={}, error={}", source, err);
 
-                    // Retry without proxy
-                    if data.has_proxy && err.is_connect() {
-                        request = create_http_client(Duration::from_secs(30), None).get(source).send().await;
+                    // Disable proxy on third retry
+                    if retry == 1 && data.has_proxy && err.is_connect() {
+                        reqwest = create_http_client(Duration::from_secs(30), None);
                     }
                 };
+
+                // Start download
+                let mut download = 0;
                 if let Ok(mut stream) = request.and_then(|r| r.error_for_status()).map(|r| r.bytes_stream()) {
                     while let Some(bytes) = stream.next().await {
                         let bytes = match &bytes {
                             Ok(it) => it,
                             Err(err) => {
-                                error!("Proxy download fail: {}", err);
+                                error!("Proxy download fail: url={}, error{}", source, err);
                                 continue 'retry;
                             }
                         };
