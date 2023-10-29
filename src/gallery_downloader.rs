@@ -114,7 +114,7 @@ impl GalleryDownloader {
                             tokio::spawn(async move {
                                 for retry in 0..3 {
                                     if let Err(err) = download(reqwest.clone(), url.clone(), &path, info.expected_sha1_hash).await {
-                                        warn!("Gallery file download error: {}", err);
+                                        warn!("Gallery file download error: url={}, err={}", url, err);
 
                                         if retry == 2 && (err.is::<reqwest::Error>() || err.is::<Error>()) {
                                             if let Some(host) = url.host_str() {

@@ -124,7 +124,7 @@ async fn hath(
                 let source = sources.next().unwrap();
                 let request = reqwest.get(source).send().await;
                 if let Err(ref err) = request {
-                    error!("Cache download fail: url={}, error={}", source, err);
+                    error!("Cache download fail: url={}, err={}", source, err);
 
                     // Disable proxy on third retry
                     if retry == 1 && data.has_proxy && err.is_connect() {
@@ -139,7 +139,7 @@ async fn hath(
                         let bytes = match &bytes {
                             Ok(it) => it,
                             Err(err) => {
-                                error!("Proxy download fail: url={}, error{}", source, err);
+                                error!("Proxy download fail: url={}, err={}", source, err);
                                 continue 'retry;
                             }
                         };
