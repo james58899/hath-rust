@@ -108,6 +108,8 @@ impl Settings {
 
         if let Some(disabled) = settings.get("disable_logging").and_then(|s| s.parse().ok()) {
             self.disable_logging.store(disabled, Ordering::Relaxed);
+        } else {
+            self.disable_logging.store(false, Ordering::Relaxed);
         }
     }
 }
