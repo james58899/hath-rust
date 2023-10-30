@@ -3,7 +3,7 @@ use std::{io::SeekFrom, ops::RangeInclusive, sync::Arc, time::Duration};
 use actix_files::NamedFile;
 use actix_web::{
     body::SizedStream,
-    http::header::{ContentType, TryIntoHeaderPair},
+    http::header::{ContentDisposition, ContentType, DispositionParam, DispositionType::Inline, TryIntoHeaderPair},
     route,
     web::{BytesMut, Data},
     HttpRequest, HttpResponse, Responder,
@@ -34,14 +34,17 @@ static TTL: RangeInclusive<i64> = -900..=900; // Token TTL 15 minutes
 #[route("/h/{fileid}/{additional}/{filename:.*}", method = "GET", method = "HEAD")]
 async fn hath(
     req: HttpRequest,
-    Path((file_id, additional, _file_name)): Path<(String, String, String)>,
+    Path((file_id, additional, file_name)): Path<(String, String, String)>,
     data: Data<AppState>,
 ) -> impl Responder {
     let additional = parse_additional(&additional);
-
     let mut keystamp = additional.get("keystamp").map(String::as_str).unwrap_or_default().split('-');
     let file_index = additional.get("fileindex").map(String::as_str).unwrap_or_default();
     let xres = additional.get("xres").map(String::as_str).unwrap_or_default();
+    let content_disposition = ContentDisposition {
+        disposition: Inline,
+        parameters: vec![DispositionParam::Filename(file_name)],
+    };
 
     // keystamp check
     let time = keystamp.next().unwrap_or_default();
@@ -68,7 +71,7 @@ async fn hath(
             .unwrap();
         let mut res = file
             .use_etag(false)
-            .disable_content_disposition()
+            .set_content_disposition(content_disposition)
             .set_content_type(info.mime_type())
             .into_response(&req);
         res.headers_mut().insert(cache_header.0, cache_header.1);
@@ -194,6 +197,7 @@ async fn hath(
     let mut builder = HttpResponse::Ok();
     builder.insert_header(ContentType(info.mime_type()));
     builder.insert_header(CacheControl(vec![CacheDirective::Public, CacheDirective::MaxAge(31536000)]));
+    builder.insert_header(content_disposition);
     builder.body(SizedStream::new(
         file_size,
         stream! {
