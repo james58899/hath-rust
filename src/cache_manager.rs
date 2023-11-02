@@ -62,6 +62,8 @@ impl CacheManager {
             total_size: Arc::new(AtomicU64::new(0)),
         });
 
+        clean_temp_dir(temp_dir.as_ref()).await;
+
         let manager = new.clone();
         let verify_cache = init_settings.verify_cache();
         let static_range = init_settings.static_range();
@@ -472,6 +474,20 @@ async fn fix_permission(path: &Path) {
 #[cfg(not(unix))]
 async fn fix_permission(_path: &Path) {
     // Skip
+}
+
+async fn clean_temp_dir(path: &Path) {
+    info!("Deleting old temp files");
+
+    if let Ok(mut dir) = read_dir(path).map_ok(ReadDirStream::new).await {
+        while let Some(Ok(file)) = dir.next().await {
+            let path = file.path();
+            if path.is_file() && file.file_name().to_string_lossy().starts_with("proxyfile_") {
+                debug!("Delete old temp file: {:?}", path);
+                let _ = remove_file(path).await;
+            }
+        }
+    }
 }
 
 #[derive(Clone, Hash, Eq, PartialEq)]
