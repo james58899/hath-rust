@@ -83,14 +83,22 @@ async fn hath(
 
     // Check if the file is already downloading
     let download_state = data.download_state.read().get(&info.hash()).cloned();
-    let (temp_path, mut rx) = if let Some(state) = download_state {
-        state
+    let (temp_path, mut rx) = if let Some((mut tempfile, progress)) = download_state {
+        let tempfile = tempfile.wait_for(Option::is_some).await;
+        if let Err(err) = tempfile {
+            error!("Waiting tempfile create error: {}", err);
+            data.download_state.write().remove(&info.hash());
+            return HttpResponse::NotFound().body("An error has occurred. (404)");
+        }
+        (tempfile.unwrap().as_ref().unwrap().clone(), progress)
     } else {
-        let temp_path = Arc::new(data.cache_manager.create_temp_file().await);
-        let (tx, rx) = watch::channel(0); // Download progress
-
         // Tracking download progress
-        data.download_state.write().insert(info.hash(), (temp_path.clone(), rx.clone()));
+        let (temp_tx, temp_rx) = watch::channel(None); // Tempfile
+        let (tx, rx) = watch::channel(0); // Download progress
+        data.download_state.write().insert(info.hash(), (temp_rx.clone(), rx.clone()));
+
+        let temp_path = Arc::new(data.cache_manager.create_temp_file().await);
+        temp_tx.send_replace(Some(temp_path.clone()));
 
         let sources = match data.rpc.sr_fetch(file_index, xres, &file_id).await {
             Some(v) => v,
