@@ -1,3 +1,4 @@
+#![windows_subsystem = "windows"]
 use std::{
     collections::HashMap,
     error::Error,
@@ -39,7 +40,7 @@ use tempfile::TempPath;
 use tikv_jemallocator::Jemalloc;
 use tokio::{
     fs::{self, try_exists, File},
-    io::{AsyncBufReadExt, BufReader},
+    io::{stderr, stdin, AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader},
     runtime::Handle,
     signal,
     sync::{
@@ -158,7 +159,24 @@ pub enum Command {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
-    let args = Args::parse();
+    // Windows system tray
+    if cfg!(windows) {
+        build_tray_icon();
+    }
+
+    // Options
+    let args = Args::try_parse();
+    if let Err(ref err) = args {
+        let _ = err.print();
+        if cfg!(windows) {
+            let mut out = stderr();
+            let _ = out.write(b"\r\nPress Enter to exit...").await.unwrap();
+            out.flush().await.unwrap();
+            let _ = stdin().read(&mut [0]).await.unwrap();
+        }
+        std::process::exit(err.exit_code());
+    }
+    let args = args.unwrap();
 
     create_dirs(vec![
         &args.data_dir,
@@ -556,5 +574,76 @@ async fn wait_shutdown_signal(mut shutdown_channel: UnboundedReceiver<()>) {
         _ = shutdown.recv() => (),
         _ = shutdown_channel.recv() => (),
         else => ()
+    }
+}
+
+#[cfg(not(windows))]
+fn build_tray_icon() {
+    // Tray icon is windows only.
+}
+
+#[cfg(windows)]
+fn build_tray_icon() {
+    use std::thread;
+
+    use tao::{
+        event_loop::{ControlFlow, EventLoopBuilder},
+        platform::windows::EventLoopBuilderExtWindows,
+    };
+    use tray_icon::{
+        menu::{Menu, MenuEvent},
+        ClickType, TrayIconBuilder, TrayIconEvent,
+    };
+
+    // Show console
+    switch_window(false);
+
+    thread::Builder::new()
+        .name("TrayEvent".into())
+        .spawn(|| {
+            let tray_menu = Menu::new(); // TODO nemu
+            let _tray_icon = TrayIconBuilder::new()
+                .with_menu(Box::new(tray_menu))
+                .with_tooltip("hath-rust - Hentai@Home but rusty") // TODO icon
+                .build()
+                .unwrap();
+
+            let mut console_hide = false;
+            let event_loop = EventLoopBuilder::new().with_any_thread(true).build();
+            let tray_channel = TrayIconEvent::receiver();
+            let menu_channel = MenuEvent::receiver();
+            event_loop.run(move |_event, _, control_flow| {
+                *control_flow = ControlFlow::WaitUntil((Instant::now() + Duration::from_millis(100)).into());
+
+                if let Ok(event) = tray_channel.try_recv() {
+                    if event.click_type == ClickType::Double {
+                        console_hide = !console_hide;
+                        switch_window(console_hide)
+                    }
+                }
+                if let Ok(_event) = menu_channel.try_recv() {
+                    // TODO
+                }
+            });
+        })
+        .unwrap();
+}
+
+#[cfg(windows)]
+fn switch_window(hide: bool) {
+    use windows::Win32::{
+        System::Console::{AllocConsole, GetConsoleWindow},
+        UI::WindowsAndMessaging::{ShowWindow, SW_HIDE, SW_SHOW},
+    };
+
+    let mut window = unsafe { GetConsoleWindow() };
+    if window.0 == 0 && unsafe { AllocConsole().is_ok() } {
+        window = unsafe { GetConsoleWindow() };
+    }
+
+    if window.0 != 0 {
+        unsafe {
+            ShowWindow(window, if hide { SW_HIDE } else { SW_SHOW });
+        }
     }
 }
