@@ -163,7 +163,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     create_dirs(vec![
         &args.data_dir,
         &args.cache_dir,
-        &args.cache_dir,
+        &args.log_dir,
         &args.temp_dir,
         &args.download_dir,
     ])
