@@ -633,12 +633,20 @@ fn build_tray_icon() {
 fn switch_window(hide: bool) {
     use windows::Win32::{
         System::Console::{AllocConsole, GetConsoleWindow},
-        UI::WindowsAndMessaging::{ShowWindow, SW_HIDE, SW_SHOW},
+        UI::WindowsAndMessaging::{DeleteMenu, GetSystemMenu, ShowWindow, MF_BYCOMMAND, SC_CLOSE, SW_HIDE, SW_SHOW},
     };
 
     let mut window = unsafe { GetConsoleWindow() };
     if window.0 == 0 && unsafe { AllocConsole().is_ok() } {
         window = unsafe { GetConsoleWindow() };
+
+        // Try Disable close button
+        let menu = unsafe { GetSystemMenu(window, false) };
+        if !menu.is_invalid() {
+            unsafe {
+                let _ = DeleteMenu(menu, SC_CLOSE, MF_BYCOMMAND);
+            };
+        }
     }
 
     if window.0 != 0 {
