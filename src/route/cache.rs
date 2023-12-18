@@ -20,6 +20,7 @@ use tokio::{
     fs::{File, OpenOptions},
     io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt},
     sync::watch,
+    time::timeout,
 };
 
 use crate::{
@@ -215,7 +216,8 @@ async fn hath(
             let mut read_off = 0;
             let mut write_off = *rx.borrow();
 
-            'watch: while rx.changed().await.is_ok() || write_off != read_off {
+            let wait_time = Duration::from_secs(30);
+            'watch: while timeout(wait_time, rx.changed()).await.is_ok_and(|r| r.is_ok()) || write_off != read_off {
                 write_off = *rx.borrow();
 
                 while write_off > read_off {
