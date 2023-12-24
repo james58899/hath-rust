@@ -97,6 +97,11 @@ async fn hath(
         let (temp_tx, temp_rx) = watch::channel(None); // Tempfile
         let tx = Arc::new(watch::channel(0).0); // Download progress
         data.download_state.write().insert(info.hash(), (temp_rx.clone(), tx.clone()));
+        // Make sure the state will be removed when cancellation.
+        let data2 = data.clone();
+        let state_guard = scopeguard::guard(info.hash(), move |hash| {
+            data2.download_state.write().remove(&hash);
+        });
 
         let temp_path = Arc::new(data.cache_manager.create_temp_file().await);
         temp_tx.send_replace(Some(temp_path.clone()));
@@ -104,7 +109,6 @@ async fn hath(
         let sources = match data.rpc.sr_fetch(file_index, xres, &file_id).await {
             Some(v) => v,
             None => {
-                data.download_state.write().remove(&info.hash());
                 return HttpResponse::NotFound().body("An error has occurred. (404)");
             }
         };
@@ -194,7 +198,7 @@ async fn hath(
             }
 
             // Try remove from download state anyway
-            data.download_state.write().remove(&info2.hash());
+            drop(state_guard);
         });
 
         (temp_path, tx.subscribe())
