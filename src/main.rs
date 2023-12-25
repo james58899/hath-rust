@@ -138,7 +138,7 @@ struct Args {
     proxy: Option<String>,
 }
 
-type DownloadState = RwLock<HashMap<[u8; 20], (watch::Receiver<Option<Arc<TempPath>>>, Arc<watch::Sender<u64>>)>>;
+type DownloadState = Mutex<HashMap<[u8; 20], (watch::Receiver<Option<Arc<TempPath>>>, Arc<watch::Sender<u64>>)>>;
 
 struct AppState {
     runtime: Handle,
