@@ -228,7 +228,7 @@ async fn hath(
             let mut write_off = *rx.borrow();
 
             let wait_time = Duration::from_secs(30);
-            'watch: while timeout(wait_time, rx.changed()).await.is_ok_and(|r| r.is_ok()) || write_off != read_off {
+            'watch: while write_off > read_off || timeout(wait_time, rx.changed()).await.is_ok_and(|r| r.is_ok()) {
                 write_off = *rx.borrow();
 
                 while write_off > read_off {
