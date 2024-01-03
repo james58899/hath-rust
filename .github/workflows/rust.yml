@@ -76,3 +76,22 @@ jobs:
         with:
           name: hath-rust-windows
           path: target/release/hath-rust.exe
+  build-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+      - name: Build
+        run: cargo build --verbose --release
+      - uses: actions/upload-artifact@v3
+        with:
+          name: hath-rust-macos
+          path: target/release/hath-rust
