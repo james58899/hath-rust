@@ -26,6 +26,8 @@ pub fn create_http_client(timeout: Duration, proxy: Option<Proxy>) -> reqwest::C
 
     if let Some(proxy) = proxy {
         builder = builder.proxy(proxy);
+    } else {
+        builder = builder.no_proxy();
     }
 
     builder.build().unwrap()
