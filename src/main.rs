@@ -236,7 +236,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         client.get_cert().await.unwrap(),
         AppState {
             runtime: Handle::current(),
-            reqwest: create_http_client(Duration::from_secs(30), proxy),
+            reqwest: create_http_client(Duration::from_secs(30), proxy.clone()),
             rpc: client.clone(),
             download_state: Default::default(),
             cache_manager: cache_manager.clone(),
@@ -302,7 +302,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 Command::StartDownloader => {
                     let mut downloader = downloader2.lock();
                     if downloader.is_none() {
-                        let new = GalleryDownloader::new(client2.clone(), &args.download_dir);
+                        let new = GalleryDownloader::new(client2.clone(), &args.download_dir, proxy.clone());
                         let downloader3 = downloader2.clone();
                         *downloader = Some(tokio::spawn(async move {
                             new.run().await;

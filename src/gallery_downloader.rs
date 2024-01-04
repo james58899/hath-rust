@@ -11,7 +11,7 @@ use log::{debug, error, info, warn};
 use openssl::sha::Sha1;
 use parking_lot::Mutex;
 use regex::Regex;
-use reqwest::Url;
+use reqwest::{Proxy, Url};
 use tokio::{
     fs::{self, create_dir_all},
     io::{AsyncReadExt, AsyncWriteExt},
@@ -27,16 +27,16 @@ static MAX_DOWNLOAD_TASK: u32 = 4;
 
 pub struct GalleryDownloader {
     client: Arc<RPCClient>,
-    reqwest: reqwest::Client,
     download_dir: PathBuf,
+    proxy: Option<Proxy>,
 }
 
 impl GalleryDownloader {
-    pub fn new<P: AsRef<Path>>(client: Arc<RPCClient>, download_dir: P) -> GalleryDownloader {
+    pub fn new<P: AsRef<Path>>(client: Arc<RPCClient>, download_dir: P, proxy: Option<Proxy>) -> GalleryDownloader {
         GalleryDownloader {
             client,
-            reqwest: util::create_http_client(Duration::from_secs(300), None),
             download_dir: download_dir.as_ref().to_path_buf(),
+            proxy,
         }
     }
 
@@ -81,6 +81,13 @@ impl GalleryDownloader {
             let downloaded_files = Arc::new(Mutex::new(HashSet::new()));
             'retry: for retry in 0..10 {
                 let semaphore = Arc::new(Semaphore::new(MAX_DOWNLOAD_TASK as usize));
+                let force_image_server = retry % 2 != 0;
+                let use_proxy = force_image_server && self.proxy.is_some();
+                let reqwest = if use_proxy {
+                    util::create_http_client(Duration::from_secs(300), self.proxy.clone())
+                } else {
+                    util::create_http_client(Duration::from_secs(300), None)
+                };
                 for info in &meta.gallery_files {
                     let info = info.clone();
                     if !self.client.is_running() {
@@ -99,22 +106,28 @@ impl GalleryDownloader {
 
                     // Get download URL and download file
                     let mut start_time = Instant::now();
-                    match self
+                    let url = self
                         .client
-                        .dl_fetch(meta.gid, info.page, info.fileindex, &info.xres, retry % 2 != 0)
+                        .dl_fetch(meta.gid, info.page, info.fileindex, &info.xres, force_image_server)
                         .await
-                        .and_then(|s| Url::parse(&s[0]).ok())
-                    {
+                        .and_then(|s| Url::parse(&s[0]).ok());
+                    match url {
                         Some(url) => {
                             start_time = Instant::now();
                             let permit = semaphore.clone().acquire_owned().await.expect("Semaphore closed");
                             let meta = meta.clone();
                             let downloaded_files = downloaded_files.clone();
-                            let reqwest = self.reqwest.clone();
+                            let mut reqwest = reqwest.clone();
                             tokio::spawn(async move {
                                 for retry in 0..3 {
                                     if let Err(err) = download(reqwest.clone(), url.clone(), &path, info.expected_sha1_hash).await {
                                         warn!("Gallery file download error: url={}, err={}", url, err);
+
+                                        // Try download without proxy at third time
+                                        if use_proxy && retry == 1 && err.downcast_ref().map(reqwest::Error::is_connect).unwrap_or(false) {
+                                            warn!("Retry download without proxy...");
+                                            reqwest = util::create_http_client(Duration::from_secs(300), None);
+                                        }
 
                                         if retry == 2 && (err.is::<reqwest::Error>() || err.is::<Error>()) {
                                             if let Some(host) = url.host_str() {
