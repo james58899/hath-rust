@@ -38,15 +38,17 @@ jobs:
       run: |
         rustup update
         rustup toolchain install nightly
-        rustup target add --toolchain nightly aarch64-unknown-linux-gnu
+        rustup target add --toolchain nightly x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu
     - name: Build x86_64
       env:
-        RUSTFLAGS: "-Clinker-plugin-lto -Clinker=clang-17 -Clink-arg=-fuse-ld=lld-17"
-      run: cargo build --verbose --release
+        CARGO_HOST_LINKER: "clang-17"
+        CARGO_HOST_RUSTFLAGS: "-Clink-arg=-fuse-ld=lld-17"
+        CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS: "-Clinker-plugin-lto -Clinker=clang-17 -Clink-arg=-fuse-ld=lld-17 -Clink-arg=--target=x86_64-unknown-linux-gnu"
+      run: cargo +nightly -Ztarget-applies-to-host -Zhost-config build --verbose --release --target=x86_64-unknown-linux-gnu
     - uses: actions/upload-artifact@v3
       with:
         name: hath-rust-x86_64
-        path: target/release/hath-rust
+        path: target/x86_64-unknown-linux-gnu/release/hath-rust
     - name: Build aarch64
       env:
         CARGO_HOST_LINKER: "clang-17"
