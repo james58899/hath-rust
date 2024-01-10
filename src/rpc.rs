@@ -533,7 +533,7 @@ The program will now terminate.
                     .filter_map(|s| IpAddr::from_str(s).ok())
                     .map(|ip| match ip {
                         IpAddr::V4(ip) => ip.to_string(),
-                        IpAddr::V6(ip) => ip.to_ipv4().map_or_else(|| ip.to_string(), |ip| ip.to_string()),
+                        IpAddr::V6(ip) => ip.to_ipv4_mapped().map_or_else(|| ip.to_string(), |ip| ip.to_string()),
                     })
                     .collect();
             }
