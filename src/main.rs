@@ -362,7 +362,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         job.abort();
     }
     info!("Shutdown in progress - please wait");
-    sleep(Duration::from_secs(30)).await;
+    sleep(Duration::from_secs(20)).await;
     server_handle.stop(true).await;
     logger.shutdown().await;
     Ok(())
@@ -478,6 +478,7 @@ fn create_server(port: u16, cert: ParsedPkcs12_2, data: AppState) -> (Server, wa
             .configure(route::configure)
     })
     .disable_signals()
+    .shutdown_timeout(10)
     .client_request_timeout(Duration::from_secs(15))
     .on_connect(|conn, _ext| {
         if let Some(tcp) = conn.downcast_ref::<TlsStream<TcpStream>>() {
