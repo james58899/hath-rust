@@ -3,15 +3,12 @@ use std::{io::SeekFrom, ops::RangeInclusive, sync::Arc, time::Duration};
 use actix_files::NamedFile;
 use actix_web::{
     body::SizedStream,
-    http::header::{ContentDisposition, ContentType, DispositionParam, DispositionType::Inline, TryIntoHeaderPair},
+    http::header::{ContentDisposition, ContentType, DispositionParam, DispositionType::Inline, HeaderName, HeaderValue, CACHE_CONTROL},
     route,
     web::{BytesMut, Data},
     HttpRequest, HttpResponse, Responder,
 };
-use actix_web_lab::{
-    extract::Path,
-    header::{CacheControl, CacheDirective},
-};
+use actix_web_lab::extract::Path;
 use async_stream::stream;
 use futures::{FutureExt, StreamExt};
 use log::error;
@@ -30,7 +27,9 @@ use crate::{
     AppState,
 };
 
-static TTL: RangeInclusive<i64> = -900..=900; // Token TTL 15 minutes
+const TTL: RangeInclusive<i64> = -900..=900; // Token TTL 15 minutes
+#[allow(clippy::declare_interior_mutable_const)]
+const CACHE_HEADER: (HeaderName, HeaderValue) = (CACHE_CONTROL, HeaderValue::from_static("public, max-age=31536000"));
 
 #[route("/h/{fileid}/{additional}/{filename:.*}", method = "GET", method = "HEAD")]
 async fn hath(
@@ -39,9 +38,9 @@ async fn hath(
     data: Data<AppState>,
 ) -> impl Responder {
     let additional = parse_additional(&additional);
-    let mut keystamp = additional.get("keystamp").map(String::as_str).unwrap_or_default().split('-');
-    let file_index = additional.get("fileindex").map(String::as_str).unwrap_or_default();
-    let xres = additional.get("xres").map(String::as_str).unwrap_or_default();
+    let mut keystamp = additional.get("keystamp").unwrap_or(&"").split('-');
+    let file_index = additional.get("fileindex").unwrap_or(&"");
+    let xres = additional.get("xres").unwrap_or(&"");
     let content_disposition = ContentDisposition {
         disposition: Inline,
         parameters: vec![DispositionParam::Filename(file_name)],
@@ -67,15 +66,12 @@ async fn hath(
         .then(|f| async move { tokio::task::spawn_blocking(|| NamedFile::open(f?).ok()).await.ok().flatten() })
         .await
     {
-        let cache_header = CacheControl(vec![CacheDirective::Public, CacheDirective::MaxAge(31536000)])
-            .try_into_pair()
-            .unwrap();
         let mut res = file
             .use_etag(false)
             .set_content_disposition(content_disposition)
             .set_content_type(info.mime_type())
             .into_response(&req);
-        res.headers_mut().insert(cache_header.0, cache_header.1);
+        res.headers_mut().insert(CACHE_HEADER.0, CACHE_HEADER.1);
         return res;
     }
 
@@ -218,7 +214,7 @@ async fn hath(
 
     let mut builder = HttpResponse::Ok();
     builder.insert_header(ContentType(info.mime_type()));
-    builder.insert_header(CacheControl(vec![CacheDirective::Public, CacheDirective::MaxAge(31536000)]));
+    builder.insert_header(CACHE_HEADER);
     builder.insert_header(content_disposition);
     builder.body(SizedStream::new(
         file_size,

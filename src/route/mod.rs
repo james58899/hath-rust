@@ -43,7 +43,7 @@ fn forbidden() -> HttpResponse {
         .body("An error has occurred. (403)")
 }
 
-fn parse_additional(additional: &str) -> HashMap<String, String> {
+fn parse_additional(additional: &str) -> HashMap<&str, &str> {
     let mut map = HashMap::new();
     for kv in additional.split(';') {
         let mut pair = kv.split('=');
@@ -53,7 +53,7 @@ fn parse_additional(additional: &str) -> HashMap<String, String> {
             continue;
         }
 
-        map.insert(k.unwrap().to_string(), v.unwrap().to_string());
+        map.insert(k.unwrap(), v.unwrap());
     }
 
     map

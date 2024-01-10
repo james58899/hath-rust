@@ -50,13 +50,13 @@ async fn servercmd(
         "threaded_proxy_test" => {
             let additional = parse_additional(&additional);
 
-            let host = additional.get("hostname").map(|s| s.as_str()).unwrap_or("");
-            let protocol = additional.get("protocol").map(|s| s.as_str()).unwrap_or("http");
+            let host = additional.get("hostname").unwrap_or(&"");
+            let protocol = additional.get("protocol").unwrap_or(&"http");
             let port = additional.get("port").and_then(|s| s.parse::<u16>().ok()).unwrap_or(0);
             let size = additional.get("testsize").and_then(|s| s.parse::<u32>().ok()).unwrap_or(0);
             let count = additional.get("testcount").and_then(|s| s.parse::<u8>().ok()).unwrap_or(0);
             let timestamp = additional.get("testtime").and_then(|s| s.parse::<u64>().ok()).unwrap_or(0);
-            let token = additional.get("testkey").map(|s| s.as_str()).unwrap_or("");
+            let token = additional.get("testkey").unwrap_or(&"");
 
             debug!(
                 "Running threaded proxy test against hostname={} protocol={} port={} testsize={} testcount={} testtime={} testkey={}",

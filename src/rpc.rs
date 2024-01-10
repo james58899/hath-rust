@@ -97,7 +97,7 @@ impl Settings {
         self.disable_logging.load(Ordering::Relaxed)
     }
 
-    fn update(&self, settings: HashMap<String, String>) {
+    fn update(&self, settings: HashMap<&str, &str>) {
         if let Some(size) = settings.get("disklimit_bytes").and_then(|s| s.parse().ok()) {
             self.size_limit.store(size, Ordering::Relaxed);
         }
@@ -176,6 +176,7 @@ impl RPCClient {
                 .ok_or_else(|| Error::InitSettingsMissing("port".to_string()))?;
             let client_host = map
                 .get("host")
+                .copied()
                 .ok_or_else(|| Error::InitSettingsMissing("host".to_string()))?
                 .to_owned();
             let verify_cache = map.get("verify_cache").and_then(|s| s.parse().ok()).unwrap_or(false);
@@ -419,7 +420,7 @@ The program will now terminate.
         url.query_pairs_mut().append_pair("act", "server_stat");
         let start_time = Instant::now();
         let body = self
-            .send_request(&url.to_string())
+            .send_request(url)
             .await
             .map_err(|_| Error::connection_error("Failed to get initial stat from server."))?;
         let request_time = chrono::Duration::from_std(start_time.elapsed()).unwrap_or_else(|_| chrono::Duration::zero());
@@ -519,11 +520,11 @@ The program will now terminate.
             .append_pair("acttime", timestamp)
             .append_pair("actkey", &hash);
 
-        debug!("{}", url.to_string());
+        debug!("{}", url);
         url
     }
 
-    fn update_settings(&self, settings: HashMap<String, String>) {
+    fn update_settings(&self, settings: HashMap<&str, &str>) {
         // Update RPC server IP
         if let Some(ips) = settings.get("rpc_server_ip") {
             {
@@ -591,7 +592,7 @@ impl ApiResponse {
     }
 
     /// Parse data to HashMap
-    fn to_map(&self) -> HashMap<String, String> {
+    fn to_map(&self) -> HashMap<&str, &str> {
         let mut map = HashMap::new();
         for kv in &self.data {
             let mut pair = kv.split('=');
@@ -601,7 +602,7 @@ impl ApiResponse {
                 continue;
             }
 
-            map.insert(k.unwrap().to_string(), v.unwrap().to_string());
+            map.insert(k.unwrap(), v.unwrap());
         }
 
         map

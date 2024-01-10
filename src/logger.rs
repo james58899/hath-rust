@@ -196,7 +196,7 @@ impl log::Log for LoggerWorker {
             message: format!(
                 "{} [{}/{}] {}",
                 time,
-                level.to_string().to_lowercase(),
+                level.as_str().to_lowercase(),
                 record.target(),
                 record.args()
             ),
