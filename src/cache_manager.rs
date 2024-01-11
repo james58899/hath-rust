@@ -172,18 +172,21 @@ impl CacheManager {
         spawn(async move {
             let mut counter: u32 = 0;
             let mut next_run = Instant::now();
-            while let Some(manager) = manager.upgrade() {
+            loop {
                 sleep_until(next_run).await;
+                if let Some(manager) = manager.upgrade() {
+                    // Cycle LRU cache
+                    manager.cycle_lru_cache();
+                    // Check cache size every 10min
+                    if counter % 60 == 0 {
+                        manager.check_cache_usage().await;
+                    }
 
-                // Cycle LRU cache
-                manager.cycle_lru_cache();
-                // Check cache size every 10min
-                if counter % 60 == 0 {
-                    manager.check_cache_usage().await;
+                    counter = counter.wrapping_add(1);
+                    next_run = Instant::now() + Duration::from_secs(10);
+                } else {
+                    break;
                 }
-
-                counter = counter.wrapping_add(1);
-                next_run = Instant::now() + Duration::from_secs(10);
             }
         });
     }
