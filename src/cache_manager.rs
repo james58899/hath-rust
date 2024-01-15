@@ -597,7 +597,13 @@ impl CacheFileInfo {
         } else {
             format!("{}-{}-{}", hash, self.size, self.mime_type)
         };
-        cache_dir.join(&hash[0..2]).join(&hash[2..4]).join(filename)
+        let base = cache_dir.as_os_str();
+        let mut path = PathBuf::with_capacity(base.len() + 7 + filename.len()); // base + 2 level dir + filename length
+        path.push(base);
+        path.push(&hash[0..2]);
+        path.push(&hash[2..4]);
+        path.push(filename);
+        path
     }
 
     async fn get_file(&self, cache_dir: &Path) -> Option<PathBuf> {
