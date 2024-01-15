@@ -227,13 +227,14 @@ async fn hath(
             'watch: while write_off > read_off || timeout(wait_time, rx.changed()).await.is_ok_and(|r| r.is_ok()) {
                 write_off = *rx.borrow();
 
+                let mut buffer = BytesMut::with_capacity(64*1024); // 64 KiB
                 while write_off > read_off {
-                    let mut buffer = BytesMut::with_capacity(64*1024); // 64 KiB
+                    buffer.reserve(64*1024);
                     match file.read_buf(&mut buffer).await {
                         Ok(s) => read_off += s as u64,
                         Err(err) => yield Err(err)
                     }
-                    yield Ok(buffer.freeze());
+                    yield Ok(buffer.split().freeze());
 
                     // EOF
                     if read_off == file_size {
