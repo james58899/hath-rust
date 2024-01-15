@@ -54,7 +54,7 @@ impl CacheManager {
     ) -> Result<Arc<Self>, Error> {
         let new = Arc::new(Self {
             cache_dir: cache_dir.as_ref().to_path_buf(),
-            cache_date: Mutex::new(HashMap::new()),
+            cache_date: Mutex::new(HashMap::with_capacity(6000)),
             lru_cache: RwLock::new(vec![0; LRU_SIZE]),
             lru_clear_pos: Mutex::new(0),
             settings,
