@@ -124,7 +124,7 @@ impl GalleryDownloader {
                                         warn!("Gallery file download error: url={}, err={}", url, err);
 
                                         // Try download without proxy at third time
-                                        if use_proxy && retry == 1 && err.downcast_ref().map(reqwest::Error::is_connect).unwrap_or(false) {
+                                        if retry == 1 && use_proxy {
                                             warn!("Retry download without proxy...");
                                             reqwest = util::create_http_client(Duration::from_secs(300), None);
                                         }

@@ -147,7 +147,7 @@ async fn hath(
                     error!("Cache download fail: url={}, err={}", source, err);
 
                     // Disable proxy on third retry
-                    if retry == 1 && data.has_proxy && err.is_connect() {
+                    if retry == 1 && data.has_proxy {
                         reqwest = create_http_client(Duration::from_secs(30), None);
                     }
                 };
