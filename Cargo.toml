@@ -41,7 +41,7 @@ mimalloc = { version = "0.1", default-features = false }
 [target.'cfg(windows)'.dependencies]
 tray-icon = { version = "0.11", default-features = false }
 windows = { version = "*", features = ["Win32_Foundation", "Win32_System_Console", "Win32_UI_WindowsAndMessaging"] }
-tao = "0.24"
+tao = "0.25"
 
 [build-dependencies]
 built = { version = "0.7", features = ["git2", "chrono", "semver"] }
