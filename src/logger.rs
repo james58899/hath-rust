@@ -11,7 +11,7 @@ use futures::executor::block_on;
 use log::{info, Level, LevelFilter, Metadata, Record, SetLoggerError};
 use tokio::{
     fs::{rename, try_exists, File},
-    io::{AsyncWriteExt, BufWriter},
+    io::{stderr, stdout, AsyncWriteExt, BufWriter},
     select,
     sync::{
         mpsc::{unbounded_channel, UnboundedSender},
@@ -104,6 +104,8 @@ impl LoggerWorker {
         let flush2 = flush.clone();
         let shutdown2 = shutdown.clone();
         let worker = tokio::spawn(async move {
+            let mut stdout = stdout();
+            let mut stderr = stderr();
             let log_out = &log_dir.join("log_out");
             let log_err = &log_dir.join("log_err");
 
@@ -131,8 +133,10 @@ impl LoggerWorker {
                         let log = log.unwrap();
 
                         if log.level <= Level::Warn {
+                            let msg = &[log.message.as_bytes(), b"\n"].concat();
+
                             // stderr
-                            eprintln!("{}", log.message);
+                            let _ = stderr.write_all(msg).await;
 
                             // file
                             err_lines += 1;
@@ -143,10 +147,12 @@ impl LoggerWorker {
                                 writer_err = File::create(log_err).await.unwrap();
                                 err_lines = 0;
                             }
-                            let _ = writer_err.write_all(&[log.message.as_bytes(), b"\n"].concat()).await;
+                            let _ = writer_err.write_all(msg).await;
                         } else {
+                            let msg = &[log.message.as_bytes(), b"\n"].concat();
+
                             // stdout
-                            println!("{}", log.message);
+                            let _ = stdout.write_all(msg).await;
 
                             // file
                             if config.write_info.load(Ordering::Relaxed) {
@@ -158,7 +164,7 @@ impl LoggerWorker {
                                     writer_out = File::create(log_out).await.map(BufWriter::new).unwrap();
                                     out_lines = 0;
                                 }
-                                let _ = writer_out.write_all(&[log.message.as_bytes(), b"\n"].concat()).await;
+                                let _ = writer_out.write_all(msg).await;
                                 if config.flush.load(Ordering::Relaxed) {
                                     let _ = writer_out.flush().await;
                                 }
