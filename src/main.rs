@@ -25,8 +25,6 @@ use inquire::{
     CustomType, Text,
 };
 use log::{error, info, warn};
-#[cfg(target_env = "msvc")]
-use mimalloc::MiMalloc;
 use once_cell::sync::Lazy;
 use openssl::{
     pkcs12::ParsedPkcs12_2,
@@ -36,8 +34,6 @@ use parking_lot::{Mutex, RwLock};
 use regex::Regex;
 use reqwest::Proxy;
 use tempfile::TempPath;
-#[cfg(not(target_env = "msvc"))]
-use tikv_jemallocator::Jemalloc;
 use tokio::{
     fs::{self, try_exists, File},
     io::{stderr, stdin, AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader},
@@ -69,10 +65,12 @@ mod util;
 
 #[cfg(not(target_env = "msvc"))]
 #[global_allocator]
-static GLOBAL: Jemalloc = Jemalloc;
-#[cfg(target_env = "msvc")]
-#[global_allocator]
-static GLOBAL: MiMalloc = MiMalloc;
+static ALLOC: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
+
+// jemalloc config
+#[cfg(not(target_env = "msvc"))]
+#[no_mangle]
+pub static mut malloc_conf: *const u8 = b"percpu_arena:phycpu,tcache:false,dirty_decay_ms:1000,muzzy_decay_ms:0\0".as_ptr();
 
 static VERSION: Lazy<String> = Lazy::new(|| {
     format!(
