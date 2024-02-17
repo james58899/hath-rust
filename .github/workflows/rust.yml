@@ -13,17 +13,17 @@ jobs:
   build:
     runs-on: ubuntu-20.04
     env:
-      CC: clang-17
-      CXX: clang-17
-      CFLAGS: "-flto -fuse-ld=lld-17"
-      CXXFLAGS: "-flto -fuse-ld=lld-17"
+      CC: clang-18
+      CXX: clang-18
+      CFLAGS: "-flto -fuse-ld=lld-18"
+      CXXFLAGS: "-flto -fuse-ld=lld-18"
     steps:
     - uses: actions/checkout@v4
     - name: Install build tools
       run: |
         wget https://apt.llvm.org/llvm.sh
         chmod +x llvm.sh
-        sudo ./llvm.sh 17
+        sudo ./llvm.sh 18
         sudo apt-get install -y crossbuild-essential-arm64
     - uses: actions/cache@v4
       with:
@@ -41,9 +41,9 @@ jobs:
         rustup target add --toolchain nightly x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu
     - name: Build x86_64
       env:
-        CARGO_HOST_LINKER: "clang-17"
-        CARGO_HOST_RUSTFLAGS: "-Clink-arg=-fuse-ld=lld-17"
-        CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS: "-Clinker-plugin-lto -Clinker=clang-17 -Clink-arg=-fuse-ld=lld-17 -Clink-arg=--target=x86_64-unknown-linux-gnu"
+        CARGO_HOST_LINKER: "clang-18"
+        CARGO_HOST_RUSTFLAGS: "-Clink-arg=-fuse-ld=lld-18"
+        CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS: "-Clinker-plugin-lto -Clinker=clang-18 -Clink-arg=-fuse-ld=lld-18 -Clink-arg=--target=x86_64-unknown-linux-gnu"
       run: cargo +nightly -Ztarget-applies-to-host -Zhost-config build --verbose --release --target=x86_64-unknown-linux-gnu
     - uses: actions/upload-artifact@v4
       with:
@@ -51,9 +51,9 @@ jobs:
         path: target/x86_64-unknown-linux-gnu/release/hath-rust
     - name: Build aarch64
       env:
-        CARGO_HOST_LINKER: "clang-17"
-        CARGO_HOST_RUSTFLAGS: "-Clink-arg=-fuse-ld=lld-17"
-        CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_RUSTFLAGS: "-Clinker-plugin-lto -Clinker=clang-17 -Clink-arg=-fuse-ld=lld-17 -Clink-arg=--target=aarch64-unknown-linux-gnu"
+        CARGO_HOST_LINKER: "clang-18"
+        CARGO_HOST_RUSTFLAGS: "-Clink-arg=-fuse-ld=lld-18"
+        CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_RUSTFLAGS: "-Clinker-plugin-lto -Clinker=clang-18 -Clink-arg=-fuse-ld=lld-18 -Clink-arg=--target=aarch64-unknown-linux-gnu"
       run: cargo +nightly -Ztarget-applies-to-host -Zhost-config build --verbose --release --target=aarch64-unknown-linux-gnu
     - uses: actions/upload-artifact@v4
       with:
