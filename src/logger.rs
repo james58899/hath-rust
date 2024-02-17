@@ -193,13 +193,7 @@ impl log::Log for LoggerWorker {
         let time = Utc::now().to_rfc3339_opts(SecondsFormat::Secs, true);
         let _ = self.tx.send(LoggerMessage {
             level,
-            message: format!(
-                "{} [{}/{}] {}",
-                time,
-                level.as_str().to_lowercase(),
-                record.target(),
-                record.args()
-            ),
+            message: format!("{} [{}/{}] {}", time, level.as_str().to_lowercase(), record.target(), record.args()),
         });
     }
 
