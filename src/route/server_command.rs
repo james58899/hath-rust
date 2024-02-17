@@ -41,7 +41,7 @@ async fn servercmd(
     let key = data.rpc.key();
     let hash_string = format!("hentai@home-servercmd-{command}-{additional}-{id}-{time}-{key}");
     if !MAX_KEY_TIME_DRIFT.contains(&(data.rpc.get_timestemp() - time)) || string_to_hash(hash_string) != hash {
-        debug!("{} Got a servercmd with expired or incorrect key", "<SESSION>");
+        debug!("Got a servercmd with expired or incorrect key");
         return forbidden();
     }
 
