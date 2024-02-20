@@ -1,16 +1,17 @@
 use std::{io::SeekFrom, ops::RangeInclusive, sync::Arc, time::Duration};
 
-use actix_files::NamedFile;
-use actix_web::{
-    body::SizedStream,
-    http::header::{ContentDisposition, ContentType, DispositionParam, DispositionType::Inline, HeaderName, HeaderValue, CACHE_CONTROL},
-    route,
-    web::{BytesMut, Data},
-    HttpRequest, HttpResponse, Responder,
-};
-use actix_web_lab::extract::Path;
 use async_stream::stream;
-use futures::{FutureExt, StreamExt};
+use axum::{
+    body::Body,
+    extract::{Path, Request, State},
+    http::{
+        header::{CACHE_CONTROL, CONTENT_DISPOSITION, CONTENT_LENGTH, CONTENT_TYPE},
+        HeaderName, HeaderValue,
+    },
+    response::{IntoResponse, Response},
+};
+use bytes::BytesMut;
+use futures::StreamExt;
 use log::error;
 use openssl::sha::Sha1;
 use tokio::{
@@ -19,10 +20,12 @@ use tokio::{
     sync::watch,
     time::timeout,
 };
+use tower::util::ServiceExt;
+use tower_http::services::ServeFile;
 
 use crate::{
     cache_manager::CacheFileInfo,
-    route::{forbidden, parse_additional},
+    route::{forbidden, not_found, parse_additional},
     util::{create_http_client, string_to_hash},
     AppState,
 };
@@ -31,20 +34,19 @@ const TTL: RangeInclusive<i64> = -900..=900; // Token TTL 15 minutes
 #[allow(clippy::declare_interior_mutable_const)]
 const CACHE_HEADER: (HeaderName, HeaderValue) = (CACHE_CONTROL, HeaderValue::from_static("public, max-age=31536000"));
 
-#[route("/h/{fileid}/{additional}/{filename:.*}", method = "GET", method = "HEAD")]
-async fn hath(
-    req: HttpRequest,
+pub(super) async fn hath(
     Path((file_id, additional, file_name)): Path<(String, String, String)>,
-    data: Data<AppState>,
-) -> impl Responder {
+    data: State<Arc<AppState>>,
+    req: Request,
+) -> impl IntoResponse {
     let additional = parse_additional(&additional);
     let mut keystamp = additional.get("keystamp").unwrap_or(&"").split('-');
     let file_index = additional.get("fileindex").unwrap_or(&"");
     let xres = additional.get("xres").unwrap_or(&"");
-    let content_disposition = ContentDisposition {
-        disposition: Inline,
-        parameters: vec![DispositionParam::Filename(file_name)],
-    };
+    let content_disposition = (
+        CONTENT_DISPOSITION,
+        HeaderValue::from_maybe_shared(format!("inline; filename=\"{file_name}\"")).unwrap(),
+    );
 
     // keystamp check
     let time = keystamp.next().unwrap_or_default();
@@ -58,21 +60,14 @@ async fn hath(
     // Check cache hit
     let info = match CacheFileInfo::from_file_id(&file_id) {
         Some(info) => info,
-        None => return HttpResponse::NotFound().body("An error has occurred. (404)"),
+        None => return not_found(),
     };
-    if let Some(file) = data
-        .cache_manager
-        .get_file(&info)
-        .then(|f| async move { tokio::task::spawn_blocking(|| NamedFile::open(f?).ok()).await.ok().flatten() })
-        .await
-    {
-        let mut res = file
-            .use_etag(false)
-            .set_content_disposition(content_disposition)
-            .set_content_type(info.mime_type())
-            .into_response(&req);
-        res.headers_mut().insert(CACHE_HEADER.0, CACHE_HEADER.1);
-        return res;
+    if let Some(path) = data.cache_manager.get_file(&info).await {
+        let mut res = ServeFile::new_with_mime(path, &info.mime_type()).oneshot(req).await.unwrap();
+        let header = res.headers_mut();
+        header.insert(CACHE_HEADER.0, CACHE_HEADER.1);
+        header.insert(content_disposition.0, content_disposition.1);
+        return res.map(Body::new);
     }
 
     // Cache miss, proxy request
@@ -96,7 +91,7 @@ async fn hath(
         if let Err(err) = tempfile {
             error!("Waiting tempfile create error: {}", err);
             data.download_state.lock().remove(&info.hash());
-            return HttpResponse::NotFound().body("An error has occurred. (404)");
+            return not_found();
         }
         (tempfile.unwrap().as_ref().unwrap().clone(), progress.subscribe())
     } else {
@@ -111,9 +106,7 @@ async fn hath(
 
         let sources = match data.rpc.sr_fetch(file_index, xres, &file_id).await {
             Some(v) => v,
-            None => {
-                return HttpResponse::NotFound().body("An error has occurred. (404)");
-            }
+            None => return not_found(),
         };
 
         // Download worker
@@ -209,16 +202,15 @@ async fn hath(
 
     // Wait download start or 404
     if *rx.borrow() == 0 && rx.changed().await.is_err() {
-        return HttpResponse::NotFound().body("An error has occurred. (404)");
+        return not_found();
     }
 
-    let mut builder = HttpResponse::Ok();
-    builder.insert_header(ContentType(info.mime_type()));
-    builder.insert_header(CACHE_HEADER);
-    builder.insert_header(content_disposition);
-    builder.body(SizedStream::new(
-        file_size,
-        stream! {
+    Response::builder()
+        .header(CONTENT_LENGTH, file_size)
+        .header(CONTENT_TYPE, HeaderValue::from_maybe_shared(info.mime_type().to_string()).unwrap())
+        .header(CACHE_HEADER.0, CACHE_HEADER.1)
+        .header(content_disposition.0, content_disposition.1)
+        .body(Body::from_stream(stream! {
             let mut file = File::open(temp_path.as_ref()).await.unwrap();
             let mut read_off = 0;
             let mut write_off = *rx.borrow();
@@ -242,6 +234,6 @@ async fn hath(
                     }
                 }
             }
-        },
-    ))
+        }))
+        .unwrap()
 }

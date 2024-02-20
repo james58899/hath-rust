@@ -1,6 +1,5 @@
 use std::{
     cmp::max,
-    future::{ready, Ready},
     pin::Pin,
     sync::{
         atomic::{AtomicU64, Ordering},
@@ -10,22 +9,22 @@ use std::{
     time::Instant,
 };
 
-use actix_web::{
-    body::{
-        BodySize::{self, Sized},
-        MessageBody,
-    },
-    dev::{forward_ready, Service, ServiceRequest, ServiceResponse, Transform},
-    http::Method,
-    web::Bytes,
-    Error,
+use axum::{
+    body::{Body, HttpBody},
+    extract::Request,
+    http::{header::CONTENT_LENGTH, HeaderValue, Method},
+    response::Response,
 };
-use futures::future::LocalBoxFuture;
+use futures::future::BoxFuture;
+use http_body::{Frame, SizeHint};
 use log::info;
 use pin_project_lite::pin_project;
+use tower::{Layer, Service};
+
+use crate::server::ClientAddr;
 
 #[derive(Clone)]
-pub struct Logger {
+pub(super) struct Logger {
     counter: Arc<AtomicU64>,
 }
 
@@ -37,66 +36,69 @@ impl Default for Logger {
     }
 }
 
-impl<S, B> Transform<S, ServiceRequest> for Logger
-where
-    S: Service<ServiceRequest, Response = ServiceResponse<B>, Error = Error>,
-    S::Future: 'static,
-    B: MessageBody,
-{
-    type Response = ServiceResponse<LoggerFinalizer<B>>;
-    type Error = Error;
-    type Transform = LoggerMiddleware<S>;
-    type InitError = ();
-    type Future = Ready<Result<Self::Transform, Self::InitError>>;
+impl<S> Layer<S> for Logger {
+    type Service = LoggerMiddleware<S>;
 
-    fn new_transform(&self, service: S) -> Self::Future {
-        ready(Ok(LoggerMiddleware {
+    fn layer(&self, inner: S) -> Self::Service {
+        LoggerMiddleware {
             counter: self.counter.clone(),
-            service,
-        }))
+            service: inner,
+        }
     }
 }
 
-pub struct LoggerMiddleware<S> {
+#[derive(Clone)]
+pub(super) struct LoggerMiddleware<S> {
     counter: Arc<AtomicU64>,
     service: S,
 }
 
-impl<S, B> Service<ServiceRequest> for LoggerMiddleware<S>
+impl<S> Service<Request> for LoggerMiddleware<S>
 where
-    S: Service<ServiceRequest, Response = ServiceResponse<B>, Error = Error>,
-    S::Future: 'static,
-    B: MessageBody,
+    S: Service<Request, Response = Response> + Send + 'static,
+    S::Future: Send + 'static,
 {
-    type Response = ServiceResponse<LoggerFinalizer<B>>;
-    type Error = Error;
-    type Future = LocalBoxFuture<'static, Result<Self::Response, Self::Error>>;
+    type Response = Response<LoggerFinalizer>;
 
-    fn call(&self, req: ServiceRequest) -> Self::Future {
+    type Error = S::Error;
+
+    type Future = BoxFuture<'static, Result<Self::Response, Self::Error>>;
+
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        self.service.poll_ready(cx)
+    }
+
+    fn call(&mut self, req: Request) -> Self::Future {
         let start = Instant::now();
         let count = self.counter.fetch_add(1, Ordering::Relaxed) + 1;
-        let ip = req.connection_info().peer_addr().unwrap_or("-").to_string();
+        let ip = req
+            .extensions()
+            .get::<ClientAddr>()
+            .map(|i| i.ip().to_string())
+            .unwrap_or_else(|| "-".into());
         let is_head = req.method() == Method::HEAD;
-        let request = if req.query_string().is_empty() {
-            format!("{} {} {:?}", req.method(), req.path(), req.version())
+        let uri = req.uri();
+        let request = if uri.query().is_none() {
+            format!("{} {} {:?}", req.method(), uri.path(), req.version())
         } else {
-            format!("{} {}?{} {:?}", req.method(), req.path(), req.query_string(), req.version())
+            format!("{} {}?{} {:?}", req.method(), uri.path(), uri.query().unwrap(), req.version())
         };
+
         let fut = self.service.call(req);
 
         Box::pin(async move {
             let res = fut.await?;
-            let code = res.response().status().as_u16();
+            let code = res.status().as_u16();
             let mut size = 0;
 
             if !is_head {
-                if let Sized(i) = res.response().body().size() {
-                    size = i;
+                if let Some(Ok(i)) = res.headers().get(CONTENT_LENGTH).map(HeaderValue::to_str) {
+                    size = i.parse::<u64>().unwrap_or_default();
                 }
             }
 
             info!("{{{}/{:16} Code={} Byte={:<8} {}", count, ip.clone() + "}", code, size, request);
-            Ok(res.map_body(|_, body| LoggerFinalizer {
+            Ok(res.map(|body| LoggerFinalizer {
                 body,
                 count,
                 ip,
@@ -107,14 +109,12 @@ where
             }))
         })
     }
-
-    forward_ready!(service);
 }
 
 pin_project! {
-    pub struct LoggerFinalizer<B> {
+    pub(super) struct LoggerFinalizer {
         #[pin]
-        body: B,
+        body: Body,
         count: u64,
         ip: String,
         code: u16,
@@ -123,7 +123,7 @@ pin_project! {
         body_start: std::time::Instant,
     }
 
-    impl<B> PinnedDrop for LoggerFinalizer<B> {
+    impl PinnedDrop for LoggerFinalizer {
         fn drop(this: Pin<&mut Self>) {
             info!("{{{}/{:16} Code={} Byte={:<8} Finished processing request in {}ms ({:.2} KB/s)",
                 this.count,
@@ -137,16 +137,21 @@ pin_project! {
     }
 }
 
-impl<B: MessageBody> MessageBody for LoggerFinalizer<B> {
-    type Error = B::Error;
+impl HttpBody for LoggerFinalizer {
+    type Data = <Body as HttpBody>::Data;
 
-    #[inline]
-    fn size(&self) -> BodySize {
-        self.body.size()
+    type Error = <Body as HttpBody>::Error;
+
+    fn poll_frame(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
+        let this = self.project();
+        this.body.poll_frame(cx)
     }
 
-    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Result<Bytes, Self::Error>>> {
-        let this = self.project();
-        this.body.poll_next(cx)
+    fn is_end_stream(&self) -> bool {
+        self.body.is_end_stream()
+    }
+
+    fn size_hint(&self) -> SizeHint {
+        self.body.size_hint()
     }
 }

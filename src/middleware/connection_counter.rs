@@ -1,5 +1,4 @@
 use std::{
-    future::{ready, Ready},
     pin::Pin,
     sync::{
         atomic::{AtomicU64, Ordering},
@@ -8,20 +7,22 @@ use std::{
     task::{Context, Poll},
 };
 
-use actix_web::{
-    body::{BodySize, MessageBody},
-    dev::{forward_ready, Service, ServiceRequest, ServiceResponse, Transform},
-    web::Bytes,
-    Error,
+use axum::{
+    body::{Body, HttpBody},
+    extract::Request,
+    response::Response,
 };
-use futures::future::LocalBoxFuture;
+use futures::future::BoxFuture;
+use http_body::{Frame, SizeHint};
 use pin_project_lite::pin_project;
+use scopeguard::{guard, ScopeGuard};
 use tokio::sync::mpsc::Sender;
+use tower::{Layer, Service};
 
 use crate::{rpc::Settings, Command};
 
 #[derive(Clone)]
-pub struct ConnectionCounter {
+pub(super) struct ConnectionCounter {
     data: ConnectionCounterState,
 }
 
@@ -44,54 +45,54 @@ impl ConnectionCounter {
     }
 }
 
-impl<S, B> Transform<S, ServiceRequest> for ConnectionCounter
-where
-    S: Service<ServiceRequest, Response = ServiceResponse<B>, Error = Error>,
-    S::Future: 'static,
-    B: MessageBody,
-{
-    type Response = ServiceResponse<ConnectionCounterFinalizer<B>>;
-    type Error = Error;
-    type InitError = ();
-    type Transform = ConnectionCounterMiddleware<S>;
-    type Future = Ready<Result<Self::Transform, Self::InitError>>;
+impl<S> Layer<S> for ConnectionCounter {
+    type Service = ConnectionCounterMiddleware<S>;
 
-    fn new_transform(&self, service: S) -> Self::Future {
-        ready(Ok(ConnectionCounterMiddleware {
+    fn layer(&self, service: S) -> Self::Service {
+        ConnectionCounterMiddleware {
             data: self.data.clone(),
             service,
-        }))
+        }
     }
 }
 
-pub struct ConnectionCounterMiddleware<S> {
+#[derive(Clone)]
+pub(super) struct ConnectionCounterMiddleware<S> {
     data: ConnectionCounterState,
     service: S,
 }
 
-impl<S, B> Service<ServiceRequest> for ConnectionCounterMiddleware<S>
+impl<S> Service<Request> for ConnectionCounterMiddleware<S>
 where
-    S: Service<ServiceRequest, Response = ServiceResponse<B>, Error = Error>,
-    S::Future: 'static,
-    B: MessageBody,
+    S: Service<Request, Response = Response> + Send + 'static,
+    S::Future: Send + 'static,
 {
-    type Response = ServiceResponse<ConnectionCounterFinalizer<B>>;
-    type Error = Error;
-    type Future = LocalBoxFuture<'static, Result<Self::Response, Self::Error>>;
+    type Response = Response<ConnectionCounterFinalizer>;
 
-    forward_ready!(service);
+    type Error = S::Error;
 
-    fn call(&self, req: ServiceRequest) -> Self::Future {
+    type Future = BoxFuture<'static, Result<Self::Response, Self::Error>>;
+
+    fn poll_ready(&mut self, ctx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        self.service.poll_ready(ctx)
+    }
+
+    fn call(&mut self, req: Request) -> Self::Future {
         let counter = self.data.counter.clone();
         if counter.fetch_add(1, Ordering::Relaxed) > (self.data.settings.max_connection() as f64 * 0.8).ceil() as u64 {
             let _ = self.data.command_channel.try_send(Command::Overload);
         };
+        let guard = guard(counter, move |counter| {
+            counter.fetch_sub(1, Ordering::Relaxed);
+        });
 
         let fut = self.service.call(req);
 
         Box::pin(async move {
-            match fut.await {
-                Ok(res) => Ok(res.map_body(|_, body| ConnectionCounterFinalizer { body, counter })),
+            let res = fut.await;
+            let counter = ScopeGuard::into_inner(guard); // Cancel counter guard
+            match res {
+                Ok(res) => Ok(res.map(|body| ConnectionCounterFinalizer { body, counter })),
                 Err(err) => {
                     counter.fetch_sub(1, Ordering::Relaxed);
                     Err(err)
@@ -102,29 +103,34 @@ where
 }
 
 pin_project! {
-    pub struct ConnectionCounterFinalizer<B> {
+    pub(super) struct ConnectionCounterFinalizer {
         #[pin]
-        body: B,
+        body: Body,
         counter: Arc<AtomicU64>,
     }
 
-    impl<B> PinnedDrop for ConnectionCounterFinalizer<B> {
+    impl PinnedDrop for ConnectionCounterFinalizer {
         fn drop(this: Pin<&mut Self>) {
             this.counter.fetch_sub(1, Ordering::Relaxed);
         }
     }
 }
 
-impl<B: MessageBody> MessageBody for ConnectionCounterFinalizer<B> {
-    type Error = B::Error;
+impl HttpBody for ConnectionCounterFinalizer {
+    type Data = <Body as HttpBody>::Data;
 
-    #[inline]
-    fn size(&self) -> BodySize {
-        self.body.size()
+    type Error = <Body as HttpBody>::Error;
+
+    fn poll_frame(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
+        let this = self.project();
+        this.body.poll_frame(cx)
     }
 
-    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Result<Bytes, Self::Error>>> {
-        let this = self.project();
-        this.body.poll_next(cx)
+    fn is_end_stream(&self) -> bool {
+        self.body.is_end_stream()
+    }
+
+    fn size_hint(&self) -> SizeHint {
+        self.body.size_hint()
     }
 }

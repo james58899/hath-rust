@@ -1,23 +1,6 @@
 #![windows_subsystem = "windows"]
-use std::{
-    collections::HashMap,
-    error::Error,
-    net::{Ipv4Addr, SocketAddrV4},
-    ops::RangeInclusive,
-    path::Path,
-    sync::Arc,
-    time::Duration,
-};
+use std::{collections::HashMap, error::Error, ops::RangeInclusive, path::Path, sync::Arc, time::Duration};
 
-use actix_tls::accept::openssl::TlsStream;
-use actix_web::{
-    dev::{Server, Service},
-    http::{header, ConnectionType},
-    middleware::DefaultHeaders,
-    rt::net::TcpStream,
-    web::{to, Data},
-    App, HttpServer,
-};
 use clap::Parser;
 use futures::TryFutureExt;
 use inquire::{
@@ -26,11 +9,7 @@ use inquire::{
 };
 use log::{error, info, warn};
 use once_cell::sync::Lazy;
-use openssl::{
-    pkcs12::ParsedPkcs12_2,
-    ssl::{ClientHelloResponse, SslAcceptor, SslAcceptorBuilder, SslMethod, SslOptions},
-};
-use parking_lot::{Mutex, RwLock};
+use parking_lot::Mutex;
 use regex::Regex;
 use reqwest::Proxy;
 use tempfile::TempPath;
@@ -51,6 +30,7 @@ use crate::{
     gallery_downloader::GalleryDownloader,
     logger::Logger,
     rpc::RPCClient,
+    server::Server,
     util::{create_dirs, create_http_client},
 };
 
@@ -61,6 +41,7 @@ mod logger;
 mod middleware;
 mod route;
 mod rpc;
+mod server;
 mod util;
 
 #[cfg(not(target_env = "msvc"))]
@@ -80,7 +61,7 @@ static VERSION: Lazy<String> = Lazy::new(|| {
         built_info::BUILT_TIME_UTC
     )
 });
-static CLIENT_VERSION: &str = "1.6.2";
+pub static CLIENT_VERSION: &str = "1.6.2";
 static MAX_KEY_TIME_DRIFT: RangeInclusive<i64> = -300..=300;
 
 mod built_info {
@@ -138,7 +119,7 @@ struct Args {
 
 type DownloadState = Mutex<HashMap<[u8; 20], (watch::Receiver<Option<Arc<TempPath>>>, Arc<watch::Sender<u64>>)>>;
 
-struct AppState {
+pub struct AppState {
     runtime: Handle,
     reqwest: reqwest::Client,
     rpc: Arc<RPCClient>,
@@ -229,7 +210,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let has_proxy = proxy.is_some();
     // Command channel
     let (tx, mut rx) = mpsc::channel::<Command>(1);
-    let (server, cert_changer) = create_server(
+
+    info!("Starting HTTP server...");
+    let server = Server::new(
         args.port.unwrap_or_else(|| init_settings.client_port()),
         client.get_cert().await.unwrap(),
         AppState {
@@ -243,10 +226,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
         },
     );
     let server_handle = server.handle();
-
-    // Http server loop
-    info!("Starting HTTP server...");
-    tokio::spawn(server);
 
     info!("Notifying the server that we have finished starting up the client...");
     if client.connect_check(init_settings).await.is_none() {
@@ -277,10 +256,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             match command {
                 Command::ReloadCert => {
                     match client2.get_cert().await {
-                        Some(cert) => match cert_changer.send(cert) {
-                            Ok(_) => continue, // Cert update send
-                            Err(_) => error!("Update SSL cert fail"),
-                        },
+                        Some(cert) => server_handle.update_cert(cert),
                         None => error!("Fetch SSL cert fail"),
                     }
 
@@ -360,8 +336,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
         job.abort();
     }
     info!("Shutdown in progress - please wait");
-    sleep(Duration::from_secs(20)).await;
-    server_handle.stop(true).await;
+    sleep(Duration::from_secs(15)).await;
+    server.shutdown().await;
     logger.shutdown().await;
     Ok(())
 }
@@ -432,120 +408,6 @@ After registering, enter your ID and Key below to start your client.
     }
 
     Ok((id, key))
-}
-
-fn create_server(port: u16, cert: ParsedPkcs12_2, data: AppState) -> (Server, watch::Sender<ParsedPkcs12_2>) {
-    let logger = middleware::Logger::default();
-    let connection_counter = middleware::ConnectionCounter::new(data.rpc.settings(), data.command_channel.clone());
-    let app_data = Data::new(data);
-
-    // Cert changer
-    let (cert_sender, mut cert_receiver) = watch::channel(cert);
-    let ssl_context = Arc::new(RwLock::new(create_ssl_acceptor(&cert_receiver.borrow_and_update()).build()));
-    let ssl_context_write = ssl_context.clone();
-    let mut ssl_acceptor = create_ssl_acceptor(&cert_receiver.clone().borrow_and_update());
-    ssl_acceptor.set_client_hello_callback(move |ssl, _alert| {
-        ssl.set_ssl_context(ssl_context.read().context())?;
-        Ok(ClientHelloResponse::SUCCESS)
-    });
-    tokio::spawn(async move {
-        while cert_receiver.changed().await.is_ok() {
-            *ssl_context_write.write() = create_ssl_acceptor(&cert_receiver.borrow()).build();
-        }
-    });
-
-    let server = HttpServer::new(move || {
-        App::new()
-            .app_data(app_data.clone())
-            .wrap(middleware::Timeout::new(Duration::from_secs(181)))
-            .wrap(logger.clone())
-            .wrap(connection_counter.clone())
-            .wrap(DefaultHeaders::new().add((
-                header::SERVER,
-                format!("Genetic Lifeform and Distributed Open Server {CLIENT_VERSION}"),
-            )))
-            .wrap_fn(|req, next| {
-                next.call(req).map_ok(|mut res| {
-                    let head = res.response_mut().head_mut();
-                    head.set_connection_type(ConnectionType::Close);
-                    head.set_camel_case_headers(true);
-                    res
-                })
-            })
-            .default_service(to(route::default))
-            .configure(route::configure)
-    })
-    .disable_signals()
-    .shutdown_timeout(10)
-    .client_request_timeout(Duration::from_secs(15))
-    .on_connect(|conn, _ext| {
-        if let Some(tcp) = conn.downcast_ref::<TlsStream<TcpStream>>() {
-            tcp.get_ref().set_nodelay(true).unwrap();
-        }
-    })
-    .bind_openssl(SocketAddrV4::new(Ipv4Addr::new(0, 0, 0, 0), port), ssl_acceptor)
-    .unwrap()
-    .run();
-
-    (server, cert_sender)
-}
-
-fn create_ssl_acceptor(cert: &ParsedPkcs12_2) -> SslAcceptorBuilder {
-    let mut builder = SslAcceptor::mozilla_intermediate(SslMethod::tls_server()).unwrap();
-    builder.clear_options(SslOptions::NO_TLSV1_3);
-    builder.set_options(SslOptions::NO_RENEGOTIATION | SslOptions::ENABLE_MIDDLEBOX_COMPAT);
-
-    // From https://wiki.mozilla.org/Security/Server_Side_TLS#Old_backward_compatibility
-    cpufeatures::new!(cpuid_aes, "aes");
-    if !cpuid_aes::get() {
-        // Not have AES hardware acceleration, prefer ChaCha20.
-        builder
-            .set_cipher_list(
-                "@SECLEVEL=0:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:\
-                ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:\
-                ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:\
-                DHE-RSA-CHACHA20-POLY1305:DHE-RSA-AES128-GCM-SHA256:DHE-RSA-AES256-GCM-SHA384:\
-                ECDHE-ECDSA-AES128-SHA256:ECDHE-RSA-AES128-SHA256:\
-                ECDHE-ECDSA-AES128-SHA:ECDHE-RSA-AES128-SHA:\
-                ECDHE-ECDSA-AES256-SHA384:ECDHE-RSA-AES256-SHA384:\
-                ECDHE-ECDSA-AES256-SHA:ECDHE-RSA-AES256-SHA:\
-                DHE-RSA-AES128-SHA256:DHE-RSA-AES256-SHA256:\
-                AES128-GCM-SHA256:AES256-GCM-SHA384:AES128-SHA256:AES256-SHA256:AES128-SHA:AES256-SHA:\
-                DES-CBC3-SHA",
-            )
-            .unwrap();
-        builder
-            .set_ciphersuites("TLS_CHACHA20_POLY1305_SHA256:TLS_AES_128_GCM_SHA256:TLS_AES_256_GCM_SHA384")
-            .unwrap();
-    } else {
-        // Prioritize ChaCha ciphers when preferred by clients.
-        builder.set_options(SslOptions::PRIORITIZE_CHACHA);
-
-        builder
-            .set_cipher_list(
-                "@SECLEVEL=0:ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:\
-                ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:\
-                ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:\
-                DHE-RSA-AES128-GCM-SHA256:DHE-RSA-AES256-GCM-SHA384:DHE-RSA-CHACHA20-POLY1305:\
-                ECDHE-ECDSA-AES128-SHA256:ECDHE-RSA-AES128-SHA256:\
-                ECDHE-ECDSA-AES128-SHA:ECDHE-RSA-AES128-SHA:\
-                ECDHE-ECDSA-AES256-SHA384:ECDHE-RSA-AES256-SHA384:\
-                ECDHE-ECDSA-AES256-SHA:ECDHE-RSA-AES256-SHA:\
-                DHE-RSA-AES128-SHA256:DHE-RSA-AES256-SHA256:\
-                AES128-GCM-SHA256:AES256-GCM-SHA384:AES128-SHA256:AES256-SHA256:AES128-SHA:AES256-SHA:\
-                DES-CBC3-SHA",
-            )
-            .unwrap();
-        builder
-            .set_ciphersuites("TLS_AES_128_GCM_SHA256:TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256")
-            .unwrap();
-    }
-    builder.set_private_key(cert.pkey.as_ref().unwrap()).unwrap();
-    builder.set_certificate(cert.cert.as_ref().unwrap()).unwrap();
-    if let Some(i) = &cert.ca {
-        i.iter().for_each(|j| builder.add_extra_chain_cert(j.to_owned()).unwrap());
-    }
-    builder
 }
 
 #[cfg(unix)]

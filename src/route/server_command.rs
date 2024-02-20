@@ -1,10 +1,14 @@
 use std::{
     cmp::max,
+    sync::Arc,
     time::{Duration, Instant},
 };
 
-use actix_web::{route, web::Data, HttpRequest, HttpResponse, Responder};
-use actix_web_lab::extract::Path;
+use axum::{
+    extract::{Path, State},
+    http::StatusCode,
+    response::{IntoResponse, Response},
+};
 use futures::TryStreamExt;
 use log::debug;
 use rand::{prelude::SmallRng, Rng, SeedableRng};
@@ -15,23 +19,18 @@ use reqwest::{
 
 use crate::{
     route::{forbidden, parse_additional, speed_test::random_response},
+    server::ClientAddr,
     util::{create_http_client, string_to_hash},
     AppState, Command, MAX_KEY_TIME_DRIFT,
 };
 
-#[route("/servercmd/{command}/{additional:[^/]*}/{time}/{key}", method = "GET", method = "HEAD")]
-async fn servercmd(
-    req: HttpRequest,
+pub(super) async fn servercmd(
+    addr: ClientAddr,
     Path((command, additional, time, hash)): Path<(String, String, i64, String)>,
-    data: Data<AppState>,
-) -> impl Responder {
+    data: State<Arc<AppState>>,
+) -> impl IntoResponse {
     // Server IP check
-    if !req
-        .connection_info()
-        .peer_addr()
-        .map(|ip| data.rpc.is_vaild_rpc_server(ip))
-        .unwrap_or(false)
-    {
+    if !data.rpc.is_vaild_rpc_server(&addr.ip().to_string()) {
         debug!("Got a servercmd from an unauthorized IP address");
         return forbidden();
     }
@@ -46,7 +45,7 @@ async fn servercmd(
     }
 
     match command.to_lowercase().as_str() {
-        "still_alive" => HttpResponse::Ok().body("I feel FANTASTIC and I'm still alive"),
+        "still_alive" => "I feel FANTASTIC and I'm still alive".into_response(),
         "threaded_proxy_test" => {
             let additional = parse_additional(&additional);
 
@@ -64,7 +63,7 @@ async fn servercmd(
             );
 
             if host.is_empty() || port == 0 || size == 0 || count == 0 || timestamp == 0 || token.is_empty() {
-                return HttpResponse::BadRequest().finish();
+                return StatusCode::BAD_REQUEST.into_response();
             }
 
             // Switch to MT tokio runtime
@@ -134,7 +133,7 @@ async fn servercmd(
             let ms = total_time.as_millis();
             let speed = (size * success) as f64 / ms.checked_div(success as u128).unwrap_or(1) as f64;
             debug!("Speedtest result: success {}/{}, speed {:.2} KB/s", success, count, speed);
-            HttpResponse::Ok().body(format!("OK:{}-{}", success, ms))
+            format!("OK:{}-{}", success, ms).into_response()
         }
         "speed_test" => random_response(
             parse_additional(&additional)
@@ -144,16 +143,16 @@ async fn servercmd(
         ),
         "refresh_settings" => {
             let _ = data.command_channel.send(Command::RefreshSettings).await; // Ignore error
-            HttpResponse::Ok().finish()
+            Response::default()
         }
         "start_downloader" => {
             let _ = data.command_channel.send(Command::StartDownloader).await; // Ignore error
-            HttpResponse::Ok().finish()
+            Response::default()
         }
         "refresh_certs" => {
             let _ = data.command_channel.send(Command::ReloadCert).await; // Ignore error
-            HttpResponse::Ok().finish()
+            Response::default()
         }
-        _ => HttpResponse::Ok().body("INVALID_COMMAND"),
+        _ => "INVALID_COMMAND".into_response(),
     }
 }
