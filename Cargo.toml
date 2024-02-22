@@ -7,11 +7,11 @@ build = "build.rs"
 [dependencies]
 actix-files = "0.6"
 actix-tls = { version = "*", default-features = false, features = ["accept"] }
-actix-web = { version = "4.4", default-features = false, features = ["macros", "openssl"] }
+actix-web = { version = "4.5", default-features = false, features = ["macros", "openssl"] }
 actix-web-lab = "0.20"
 async-stream = "0.3"
 chrono = "0.4"
-clap = { version = "4.4", features = ["derive", "wrap_help"] }
+clap = { version = "4.5", features = ["derive", "wrap_help"] }
 cpufeatures = "0.2"
 filesize = "0.2"
 filetime = "0.2"
@@ -28,7 +28,7 @@ rand = { version = "0.8", default-features = false, features = ["small_rng"] }
 regex = "1.10"
 reqwest = { version = "0.11", default-features = false, features = ["rustls-tls", "stream", "socks"] }
 scopeguard = "1.2"
-tempfile = "3.9"
+tempfile = "3.10"
 tokio = { version = "1", features = ["full", "parking_lot"] }
 tokio-stream = { version = "0.1", default-features = false, features = ["fs"] }
 
@@ -40,8 +40,8 @@ tikv-jemallocator = { version = "0.5", features = ["unprefixed_malloc_on_support
 
 [target.'cfg(windows)'.dependencies]
 tray-icon = { version = "0.11", default-features = false }
-windows = { version = "*", features = ["Win32_Foundation", "Win32_System_Console", "Win32_UI_WindowsAndMessaging"] }
-tao = "0.24"
+windows = { version = "0.53", features = ["Win32_Foundation", "Win32_System_Console", "Win32_UI_WindowsAndMessaging"] }
+tao = "0.26"
 
 [build-dependencies]
 built = { version = "0.7", features = ["git2", "chrono", "semver"] }
