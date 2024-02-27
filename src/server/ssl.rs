@@ -10,6 +10,7 @@ pub fn create_ssl_acceptor(cert: &ParsedPkcs12_2) -> SslAcceptor {
     builder.set_options(SslOptions::NO_RENEGOTIATION | SslOptions::ENABLE_MIDDLEBOX_COMPAT);
     builder.set_mode(SslMode::RELEASE_BUFFERS);
     builder.set_session_cache_mode(SslSessionCacheMode::OFF); // Disable session ID resumption
+    let _ = builder.set_num_tickets(1);
 
     // From https://wiki.mozilla.org/Security/Server_Side_TLS#Old_backward_compatibility
     cpufeatures::new!(cpuid_aes, "aes");
