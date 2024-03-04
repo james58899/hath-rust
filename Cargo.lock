@@ -1153,6 +1153,7 @@ dependencies = [
  "cpufeatures",
  "filesize",
  "filetime",
+ "foreign-types-shared 0.1.1",
  "futures",
  "hex",
  "http-body 1.0.0",
@@ -1165,6 +1166,7 @@ dependencies = [
  "once_cell",
  "openssl",
  "openssl-src",
+ "openssl-sys",
  "parking_lot",
  "pin-project-lite",
  "rand",
@@ -1785,8 +1787,7 @@ checksum = "3fdb12b2476b595f9358c5161aa467c2438859caa136dec86c26fdd2efe17b92"
 [[package]]
 name = "openssl"
 version = "0.10.64"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "95a0481286a310808298130d22dd1fef0fa571e05a8f44ec801801e84b216b1f"
+source = "git+https://github.com/james58899/rust-openssl?rev=310d7d4#310d7d4aba2b4a86cd1e90cc3a017208027cc886"
 dependencies = [
  "bitflags 2.4.2",
  "cfg-if",
@@ -1800,8 +1801,7 @@ dependencies = [
 [[package]]
 name = "openssl-macros"
 version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a948666b637a0f465e8564c73e89d4dde00d72d4d473cc972f390fc3dcee7d9c"
+source = "git+https://github.com/james58899/rust-openssl?rev=310d7d4#310d7d4aba2b4a86cd1e90cc3a017208027cc886"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1811,8 +1811,7 @@ dependencies = [
 [[package]]
 name = "openssl-src"
 version = "300.2.3+3.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5cff92b6f71555b61bb9315f7c64da3ca43d87531622120fea0195fc761b4843"
+source = "git+https://github.com/james58899/openssl-src-rs?rev=494d405#494d405ee53a2def0ad7906c7cb13db4ff1a4dea"
 dependencies = [
  "cc",
 ]
@@ -1820,8 +1819,7 @@ dependencies = [
 [[package]]
 name = "openssl-sys"
 version = "0.9.101"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dda2b0f344e78efc2facf7d195d098df0dd72151b26ab98da807afc26c198dff"
+source = "git+https://github.com/james58899/rust-openssl?rev=310d7d4#310d7d4aba2b4a86cd1e90cc3a017208027cc886"
 dependencies = [
  "cc",
  "libc",

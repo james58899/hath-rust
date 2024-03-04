@@ -13,6 +13,7 @@ chrono = "0.4"
 clap = { version = "4.5", features = ["derive", "wrap_help"] }
 filesize = "0.2"
 filetime = "0.2"
+foreign-types-shared = "0.1.1" # openssl-sys use old version
 futures = "0.3"
 hex = "0.4"
 http-body = "1.0"
@@ -24,6 +25,7 @@ log = { version = "0.4", features = ["std"] }
 mime = "0.3"
 once_cell = "1.19"
 openssl = { version = "*", features = ["vendored"] }
+openssl-sys = "*"
 parking_lot = { version = "0.12", features = ["hardware-lock-elision", "deadlock_detection"] }
 pin-project-lite = "0.2"
 rand = { version = "0.8", features = ["small_rng"] }
@@ -32,7 +34,6 @@ reqwest = { version = "0.11", default-features = false, features = ["rustls-tls"
 scopeguard = "1.2"
 tempfile = "3.10"
 tokio = { version = "1", features = ["full", "parking_lot"] }
-tokio-openssl = "0.6"
 tokio-stream = { version = "0.1", default-features = false, features = ["fs"] }
 tower = { version = "0.4", features = ["util", "timeout"] }
 tower-http = { version = "0.5", features = ["fs"] }
@@ -40,6 +41,9 @@ tower-http = { version = "0.5", features = ["fs"] }
 # cpufeatures not support all platforms
 [target.'cfg(any(target_arch = "x86", target_arch = "x86_64", target_arch = "aarch64"))'.dependencies]
 cpufeatures = "0.2"
+
+[target.'cfg(not(unix))'.dependencies]
+tokio-openssl = "0.6"
 
 [target.'cfg(not(any(target_env = "msvc", target_os = "macos")))'.dependencies]
 tikv-jemallocator = { version = "0.5", features = ["background_threads", "unprefixed_malloc_on_supported_platforms"] }
@@ -54,9 +58,12 @@ tao = "0.26"
 
 [build-dependencies]
 built = { version = "0.7", features = ["git2", "chrono", "semver"] }
-openssl-src = { version = "300", features = ["weak-crypto"] }
+openssl-src = { version = "300", features = ["weak-crypto", "ktls"] }
 
 [patch.crates-io]
+openssl = { git = "https://github.com/james58899/rust-openssl", rev = "310d7d4" }
+openssl-sys = { git = "https://github.com/james58899/rust-openssl", rev = "310d7d4" }
+openssl-src = { git = "https://github.com/james58899/openssl-src-rs", rev = "494d405" }
 tokio-openssl = { git = "https://github.com/tokio-rs/tokio-openssl", rev = "01d32fa" }
 
 [profile.release]

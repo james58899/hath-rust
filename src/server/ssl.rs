@@ -19,6 +19,9 @@ pub fn create_ssl_acceptor(cert: ParsedPkcs12_2) -> SslAcceptor {
     let mut builder = SslAcceptor::mozilla_intermediate(SslMethod::tls_server()).unwrap();
     builder.clear_options(SslOptions::NO_TLSV1_3);
     builder.set_options(SslOptions::NO_RENEGOTIATION | SslOptions::ENABLE_MIDDLEBOX_COMPAT);
+    if cfg!(unix) {
+        builder.set_options(SslOptions::ENABLE_KTLS);
+    }
     builder.set_mode(SslMode::RELEASE_BUFFERS);
     builder.set_session_cache_mode(SslSessionCacheMode::OFF); // Disable session ID resumption
     let _ = builder.set_num_tickets(1);

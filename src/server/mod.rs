@@ -1,7 +1,6 @@
 use std::{
     net::SocketAddr,
     ops::Deref,
-    pin::Pin,
     sync::{
         atomic::{AtomicBool, Ordering},
         Arc,
@@ -26,12 +25,17 @@ use tokio::{
     task::JoinHandle,
     time::timeout,
 };
+#[cfg(not(unix))]
 use tokio_openssl::SslStream;
 use tower::{Layer, Service};
 
+#[cfg(unix)]
+use crate::server::ssl_stream::SslStream;
 use crate::{middleware, route, server::ssl::create_ssl_acceptor, AppState};
 
 pub mod ssl;
+#[cfg(unix)]
+mod ssl_stream;
 
 pub struct Server {
     handle: Arc<ServerHandle>,
@@ -86,7 +90,7 @@ impl Server {
                 tokio::spawn(async move {
                     // TLS handshake
                     let mut ssl_stream = SslStream::new(Ssl::new(handle.ssl_acceptor.load().context()).unwrap(), stream).unwrap();
-                    match timeout(Duration::from_secs(10), SslStream::accept(Pin::new(&mut ssl_stream))).await {
+                    match timeout(Duration::from_secs(10), ssl_accept(&mut ssl_stream)).await {
                         Ok(Ok(_)) => (),
                         _ => return, // Handshake timeout or error
                     }
@@ -95,7 +99,7 @@ impl Server {
                     let _ = ssl_stream.get_ref().set_nodelay(false);
 
                     // First byte timeout
-                    if (timeout(Duration::from_secs(10), SslStream::peek(Pin::new(&mut ssl_stream), &mut [0])).await).is_err() {
+                    if (timeout(Duration::from_secs(10), ssl_peek(&mut ssl_stream)).await).is_err() {
                         let _ = ssl_stream.shutdown().await;
                         return;
                     }
@@ -136,6 +140,34 @@ impl Server {
         self.handle.shutdown();
         let _ = self.task.await;
     }
+}
+
+#[cfg(unix)]
+#[inline]
+async fn ssl_accept(stream: &mut SslStream) -> Result<(), std::io::Error> {
+    stream.accept().await
+}
+
+#[cfg(not(unix))]
+#[inline]
+async fn ssl_accept(stream: &mut SslStream<TcpStream>) -> Result<(), openssl::ssl::Error> {
+    use std::pin::Pin;
+
+    SslStream::accept(Pin::new(stream)).await
+}
+
+#[cfg(unix)]
+#[inline]
+async fn ssl_peek(stream: &mut SslStream) {
+    let _ = stream.peek(&mut [0]).await;
+}
+
+#[cfg(not(unix))]
+#[inline]
+async fn ssl_peek(stream: &mut SslStream<TcpStream>) {
+    use std::pin::Pin;
+
+    let _ = SslStream::peek(Pin::new(stream), &mut [0]).await;
 }
 
 impl ServerHandle {
