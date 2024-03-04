@@ -46,7 +46,7 @@ tikv-jemallocator = { version = "0.5", features = ["unprefixed_malloc_on_support
 
 [target.'cfg(windows)'.dependencies]
 tray-icon = { version = "0.11", default-features = false }
-windows = { version = "0.52", features = ["Win32_Foundation", "Win32_System_Console", "Win32_UI_WindowsAndMessaging"] }
+windows = { version = "0.54", features = ["Win32_Foundation", "Win32_System_Console", "Win32_UI_WindowsAndMessaging"] }
 tao = "0.26"
 
 [build-dependencies]
