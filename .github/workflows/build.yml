@@ -2,7 +2,7 @@ name: Build
 
 on:
   push:
-    branches: [ "main", "dev" ]
+    branches: [ "main", "dev", "ktls-test" ]
   pull_request:
     branches: [ "main" ]
   workflow_call:
