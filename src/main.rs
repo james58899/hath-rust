@@ -299,6 +299,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let client3 = client.clone();
     let keepalive = tokio::spawn(async move {
         let mut counter: u32 = 0;
+        let mut alive_interval = 11;
         let mut next_run = Instant::now() + Duration::from_secs(10);
         loop {
             sleep_until(next_run).await;
@@ -308,8 +309,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
             }
 
             // Alive check every 110s
-            if counter % 11 == 0 && !client3.still_alive(false).await {
-                let _ = shutdown_send.send(()); // Check fail, shutdown.
+            if counter % alive_interval == 0 {
+                match client3.still_alive(false).await {
+                    Some(true) => alive_interval = 11, // OK, reset interval
+                    Some(false) => {
+                        let _ = shutdown_send.send(()); // Check fail, shutdown.
+                    }
+                    None => alive_interval = 1, // Connection error, retry after 10s
+                }
             }
 
             // Check purge list every 7hr

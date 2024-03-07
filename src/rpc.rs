@@ -398,20 +398,25 @@ The program will now terminate.
         self.running.load(Ordering::Relaxed)
     }
 
-    pub async fn still_alive(&self, resume: bool) -> bool {
-        if let Ok(res) = self.send_action("still_alive", Some(if resume { "resume" } else { "" })).await {
-            if res.is_ok() {
-                debug!("Successfully performed a stillAlive test for the server.");
-            } else if res.status == "TERM_BAD_NETWORK" {
-                error!("Client is shutting down since the network is misconfigured; correct firewall/forwarding settings then restart the client.");
-                return false; // Shutdown by RPC
-            } else {
-                warn!("Failed stillAlive test: ({}) - will retry later", res.status);
+    pub async fn still_alive(&self, resume: bool) -> Option<bool> {
+        match self.send_action("still_alive", Some(if resume { "resume" } else { "" })).await {
+            Ok(res) => {
+                if res.is_ok() {
+                    debug!("Successfully performed a stillAlive test for the server.");
+                } else {
+                    if res.status == "TERM_BAD_NETWORK" {
+                        error!("Client is shutting down since the network is misconfigured; correct firewall/forwarding settings then restart the client.");
+                        return Some(false);
+                    }
+                    warn!("Failed stillAlive test: ({}) - will retry later", res.status);
+                }
+                Some(true)
             }
-        } else {
-            warn!("Failed to connect to the server for the stillAlive test. This is probably a temporary connection problem.");
+            Err(_) => {
+                warn!("Failed to connect to the server for the stillAlive test. This is probably a temporary connection problem.");
+                None
+            }
         }
-        true
     }
 
     pub async fn notify_overload(&self) {
