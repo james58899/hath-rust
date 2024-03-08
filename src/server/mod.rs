@@ -46,7 +46,7 @@ pub struct ServerHandle {
 
 impl Server {
     pub fn new(port: u16, cert: ParsedPkcs12_2, data: AppState) -> Self {
-        let handle = Arc::new(ServerHandle::new(create_ssl_acceptor(&cert)));
+        let handle = Arc::new(ServerHandle::new(create_ssl_acceptor(cert)));
         let mut listener = bind(SocketAddr::from(([0, 0, 0, 0], port)));
 
         let mut http = http1::Builder::new();
@@ -148,7 +148,7 @@ impl ServerHandle {
     }
 
     pub fn update_cert(&self, cert: ParsedPkcs12_2) {
-        let acceptor = create_ssl_acceptor(&cert);
+        let acceptor = create_ssl_acceptor(cert);
         self.ssl_acceptor.store(Arc::new(acceptor));
     }
 
