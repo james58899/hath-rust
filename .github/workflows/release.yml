@@ -1,0 +1,40 @@
+name: Release
+
+on:
+  push:
+    branches: [ "main" ]
+    tags: [ "**" ]
+
+jobs:
+  Build:
+    uses: ./.github/workflows/build.yml
+  Release:
+    needs: Build
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download artifact
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - name: Rename artifact
+        run: |
+          mv artifacts/hath-rust-x86_64-unknown-linux-gnu/hath-rust hath-rust-x86_64-unknown-linux-gnu
+          mv artifacts/hath-rust-aarch64-unknown-linux-gnu/hath-rust hath-rust-aarch64-unknown-linux-gnu
+          mv artifacts/hath-rust-armv7-unknown-linux-gnueabihf/hath-rust hath-rust-armv7-unknown-linux-gnueabihf
+          mv artifacts/hath-rust-x86_64-pc-windows-msvc/hath-rust.exe hath-rust-x86_64-pc-windows-msvc.exe
+          mv artifacts/hath-rust-i686-pc-windows-msvc/hath-rust.exe hath-rust-i686-pc-windows-msvc.exe
+          mv artifacts/hath-rust-universal-apple-darwin/hath-rust hath-rust-universal-apple-darwin
+      - name: Create release
+        uses: softprops/action-gh-release@v1
+        with:
+          draft: true
+          generate_release_notes: true
+          files: |
+            hath-rust-x86_64-unknown-linux-gnu
+            hath-rust-aarch64-unknown-linux-gnu
+            hath-rust-armv7-unknown-linux-gnueabihf
+            hath-rust-x86_64-pc-windows-msvc.exe
+            hath-rust-i686-pc-windows-msvc.exe
+            hath-rust-universal-apple-darwin
