@@ -10,8 +10,11 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  build:
+  build-linux:
     runs-on: ubuntu-20.04
+    strategy:
+      matrix:
+        target: ["x86_64-unknown-linux-gnu", "aarch64-unknown-linux-gnu", "armv7-unknown-linux-gnueabihf"]
     env:
       CC: clang-18
       CXX: clang-18
@@ -24,7 +27,7 @@ jobs:
         wget https://apt.llvm.org/llvm.sh
         chmod +x llvm.sh
         sudo ./llvm.sh 18
-        sudo apt-get install -y crossbuild-essential-arm64
+        sudo apt-get install -y crossbuild-essential-arm64 crossbuild-essential-armhf
     - uses: actions/cache@v4
       with:
         path: |
@@ -33,34 +36,29 @@ jobs:
           ~/.cargo/registry/cache/
           ~/.cargo/git/db/
           target/
-        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+        key: cargo-${{ matrix.target }}-${{ hashFiles('**/Cargo.lock') }}
     - name: Install toolchain
       run: |
         rustup update
         rustup toolchain install nightly
-        rustup target add --toolchain nightly x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu
-    - name: Build x86_64
+        rustup target add --toolchain nightly ${{ matrix.target }}
+    - name: Build
       env:
         CARGO_HOST_LINKER: "clang-18"
         CARGO_HOST_RUSTFLAGS: "-Clink-arg=-fuse-ld=lld-18"
         CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS: "-Clinker-plugin-lto -Clinker=clang-18 -Clink-arg=-fuse-ld=lld-18 -Clink-arg=--target=x86_64-unknown-linux-gnu"
-      run: cargo +nightly -Ztarget-applies-to-host -Zhost-config build --verbose --release --target=x86_64-unknown-linux-gnu
-    - uses: actions/upload-artifact@v4
-      with:
-        name: hath-rust-x86_64
-        path: target/x86_64-unknown-linux-gnu/release/hath-rust
-    - name: Build aarch64
-      env:
-        CARGO_HOST_LINKER: "clang-18"
-        CARGO_HOST_RUSTFLAGS: "-Clink-arg=-fuse-ld=lld-18"
         CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_RUSTFLAGS: "-Clinker-plugin-lto -Clinker=clang-18 -Clink-arg=-fuse-ld=lld-18 -Clink-arg=--target=aarch64-unknown-linux-gnu"
-      run: cargo +nightly -Ztarget-applies-to-host -Zhost-config build --verbose --release --target=aarch64-unknown-linux-gnu
+        CARGO_TARGET_ARMV7_UNKNOWN_LINUX_GNUEABIHF_RUSTFLAGS: "-Clinker-plugin-lto -Clinker=clang-18 -Clink-arg=-fuse-ld=lld-18 -Clink-arg=--target=armv7-unknown-linux-gnueabihf"
+      run: cargo +nightly -Ztarget-applies-to-host -Zhost-config build --verbose --release --target=${{ matrix.target }}
     - uses: actions/upload-artifact@v4
       with:
-        name: hath-rust-aarch64
-        path: target/aarch64-unknown-linux-gnu/release/hath-rust
+        name: hath-rust-${{ matrix.target }}
+        path: target/${{ matrix.target }}/release/hath-rust
   build-windows:
     runs-on: windows-latest
+    strategy:
+      matrix:
+        target: ["x86_64-pc-windows-msvc", "i686-pc-windows-msvc"]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/cache@v4
@@ -71,13 +69,17 @@ jobs:
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
             target/
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          key: cargo-${{ matrix.target }}-${{ hashFiles('**/Cargo.lock') }}
+      - name: Install toolchain
+        run: |
+          rustup update
+          rustup target add ${{ matrix.target }}
       - name: Build
-        run: cargo build --verbose --release
+        run: cargo build --verbose --release --target ${{ matrix.target }}
       - uses: actions/upload-artifact@v4
         with:
-          name: hath-rust-windows
-          path: target/release/hath-rust.exe
+          name: hath-rust-${{ matrix.target }}
+          path: target/${{ matrix.target }}/release/hath-rust.exe
   build-macos:
     runs-on: macos-14
     steps:
@@ -90,7 +92,7 @@ jobs:
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
             target/
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          key: cargo-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
       - name: Install toolchain
         run: |
           rustup update
@@ -103,5 +105,5 @@ jobs:
         run: lipo -create target/x86_64-apple-darwin/release/hath-rust target/aarch64-apple-darwin/release/hath-rust -output target/release/hath-rust
       - uses: actions/upload-artifact@v4
         with:
-          name: hath-rust-macos
+          name: hath-rust-universal-apple-darwin
           path: target/release/hath-rust

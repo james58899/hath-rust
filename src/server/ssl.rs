@@ -13,8 +13,7 @@ pub fn create_ssl_acceptor(cert: &ParsedPkcs12_2) -> SslAcceptor {
     let _ = builder.set_num_tickets(1);
 
     // From https://wiki.mozilla.org/Security/Server_Side_TLS#Old_backward_compatibility
-    cpufeatures::new!(cpuid_aes, "aes");
-    if !cpuid_aes::get() {
+    if !aes_support() {
         // Not have AES hardware acceleration, prefer ChaCha20.
         builder
             .set_cipher_list(
@@ -63,4 +62,15 @@ pub fn create_ssl_acceptor(cert: &ParsedPkcs12_2) -> SslAcceptor {
         i.iter().for_each(|j| builder.add_extra_chain_cert(j.to_owned()).unwrap());
     }
     builder.build()
+}
+
+#[cfg(any(target_arch = "x86", target_arch = "x86_64", target_arch = "aarch64"))]
+fn aes_support() -> bool {
+    cpufeatures::new!(cpuid_aes, "aes");
+    cpuid_aes::get()
+}
+
+#[cfg(not(any(target_arch = "x86", target_arch = "x86_64", target_arch = "aarch64")))]
+fn aes_support() -> bool {
+    false // Unable to check AES acceleration support, assumed negative.
 }

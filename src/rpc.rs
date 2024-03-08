@@ -217,7 +217,10 @@ impl RPCClient {
             .and_then(|cert| cert.parse2(self.key.as_str()).ok());
 
         if let Some(cert) = &cert {
-            let tomorrow = Asn1Time::from_unix(self.get_timestemp() + 86400).unwrap_or_else(|_| Asn1Time::days_from_now(1).unwrap());
+            let timestamp = (self.get_timestemp() as isize) // Maybe is 32 bit system
+                .checked_add(86400)
+                .map(|t| Asn1Time::from_unix(t.try_into().unwrap()).unwrap());
+            let tomorrow = timestamp.unwrap_or_else(|| Asn1Time::days_from_now(1).unwrap());
             if cert.cert.is_some() && cert.pkey.is_some() && cert.cert.as_ref().unwrap().not_after() < tomorrow {
                 error!("The retrieved certificate is expired, or the system time is off by more than a day. Correct the system time and try again.");
                 return None;
