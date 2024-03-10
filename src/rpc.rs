@@ -490,11 +490,9 @@ The program will now terminate.
         let res = self.reqwest.get(url).timeout(Duration::from_secs(600)).send().await?;
 
         if let Err(err) = res.error_for_status_ref() {
-            warn!(
-                "Server response error: code={}, body={}",
-                res.status(),
-                res.text().await.unwrap_or_default()
-            );
+            let status = res.status();
+            let body = res.text().await.unwrap_or_default();
+            warn!("Server response error: code={}, body={}", status, body);
             return Err(err);
         }
 
