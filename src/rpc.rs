@@ -11,7 +11,7 @@ use std::{
     vec,
 };
 
-use chrono::{TimeZone, Utc};
+use chrono::{TimeDelta, TimeZone, Utc};
 use futures::{executor::block_on, TryFutureExt};
 use log::{debug, error, info, warn};
 use openssl::{
@@ -245,10 +245,8 @@ impl RPCClient {
     }
 
     pub fn get_timestemp(&self) -> i64 {
-        Utc::now()
-            .checked_add_signed(chrono::Duration::seconds(self.clock_offset.load(Ordering::Relaxed)))
-            .unwrap_or_else(Utc::now)
-            .timestamp()
+        let offset = TimeDelta::try_seconds(self.clock_offset.load(Ordering::Relaxed)).unwrap_or_default();
+        Utc::now().checked_add_signed(offset).unwrap_or_else(Utc::now).timestamp()
     }
 
     pub async fn connect_check(&self, settings: InitSettings) -> Option<()> {
@@ -426,7 +424,7 @@ The program will now terminate.
             .send_request(url)
             .await
             .map_err(|_| Error::connection_error("Failed to get initial stat from server."))?;
-        let request_time = chrono::Duration::from_std(start_time.elapsed()).unwrap_or_else(|_| chrono::Duration::zero());
+        let request_time = TimeDelta::from_std(start_time.elapsed()).unwrap_or_default();
         debug!("{}", body);
         let res = parse_response(body.as_str());
 
