@@ -6,6 +6,19 @@ on:
   pull_request:
     branches: [ "main" ]
   workflow_call:
+    inputs:
+      skip-linux:
+        required: false
+        type: boolean
+        default: false
+      skip-windows:
+        required: false
+        type: boolean
+        default: false
+      skip-macos:
+        required: false
+        type: boolean
+        default: false
 
 env:
   CARGO_TERM_COLOR: always
@@ -13,6 +26,7 @@ env:
 jobs:
   build-linux:
     runs-on: ubuntu-20.04
+    if: inputs.skip-linux != true
     strategy:
       matrix:
         target: ["x86_64-unknown-linux-gnu", "aarch64-unknown-linux-gnu", "armv7-unknown-linux-gnueabihf"]
@@ -57,6 +71,7 @@ jobs:
         path: target/${{ matrix.target }}/release/hath-rust
   build-windows:
     runs-on: windows-latest
+    if: inputs.skip-windows != true
     strategy:
       matrix:
         target: ["x86_64-pc-windows-msvc", "i686-pc-windows-msvc"]
@@ -83,6 +98,7 @@ jobs:
           path: target/${{ matrix.target }}/release/hath-rust.exe
   build-macos:
     runs-on: macos-14
+    if: inputs.skip-macos != true
     steps:
       - uses: actions/checkout@v4
       - uses: actions/cache@v4
