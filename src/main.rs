@@ -14,7 +14,7 @@ use regex::Regex;
 use reqwest::Proxy;
 use tempfile::TempPath;
 use tokio::{
-    fs::{self, try_exists, File},
+    fs::{self, remove_file, try_exists, File},
     io::{stderr, stdin, AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader},
     runtime::Handle,
     signal,
@@ -186,6 +186,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let (shutdown_send, shutdown_recv) = mpsc::unbounded_channel::<()>();
     let settings = client.settings();
+    delete_java_cache_data(args.data_dir).await; // Rust cache data incompatible with Java, so we must delete it
     let cache_manager = CacheManager::new(
         args.cache_dir,
         args.temp_dir,
@@ -408,6 +409,13 @@ After registering, enter your ID and Key below to start your client.
     }
 
     Ok((id, key))
+}
+
+async fn delete_java_cache_data<P: AsRef<Path>>(data_dir: P) {
+    let base = data_dir.as_ref();
+    let _ = remove_file(base.join("pcache_info")).await;
+    let _ = remove_file(base.join("pcache_ages")).await;
+    let _ = remove_file(base.join("pcache_lru")).await;
 }
 
 #[cfg(unix)]
