@@ -225,16 +225,16 @@ impl CacheManager {
     async fn scan_cache(&self, static_range: Vec<String>, parallelism: usize, verify_cache: bool) -> Result<(), Error> {
         let mut dirs = Vec::with_capacity(static_range.len());
 
-        let mut root = read_dir(&self.cache_dir).map_ok(ReadDirStream::new).await?;
-        while let Some(l1) = root.next().await.transpose()? {
+        let mut root = read_dir(&self.cache_dir).await?;
+        while let Some(l1) = root.next_entry().await? {
             let l1_path = l1.path();
             if !l1_path.is_dir() {
                 warn!("Found unexpected file in cache dir: {}", l1_path.to_str().unwrap_or_default());
                 continue;
             };
 
-            let mut l1_stream = read_dir(&l1_path).map_ok(ReadDirStream::new).await?;
-            while let Some(l2) = l1_stream.next().await.transpose()? {
+            let mut l1_stream = read_dir(&l1_path).await?;
+            while let Some(l2) = l1_stream.next_entry().await? {
                 let l2_path = l2.path();
                 if !l2_path.is_dir() {
                     warn!("Found unexpected file in cache dir: {}", l2_path.to_str().unwrap_or_default());
@@ -262,8 +262,8 @@ impl CacheManager {
         let scan_task = stream::iter(dirs)
             .map(|dir| async move {
                 let mut time = FileTime::now();
-                let mut stream = read_dir(&dir).map_ok(ReadDirStream::new).await?;
-                while let Some(entry) = stream.next().await.transpose()? {
+                let mut stream = read_dir(&dir).await?;
+                while let Some(entry) = stream.next_entry().await? {
                     let path = entry.path();
                     let metadata = metadata(&path).await;
                     if let Err(err) = metadata {
@@ -396,7 +396,7 @@ impl CacheManager {
         while need_free > 0 {
             let map = self.cache_date.lock().clone();
             let mut dirs = map.iter().collect::<Vec<_>>();
-            dirs.sort_by(|(_, a), (_, b)| a.cmp(b));
+            dirs.sort_unstable_by(|(_, a), (_, b)| a.cmp(b));
 
             let files = read_dir(dirs[0].0).map_ok(ReadDirStream::new).await;
             if let Err(err) = files {
@@ -430,7 +430,7 @@ impl CacheManager {
                 })
                 .collect()
                 .await;
-            files.sort_by(|(_, a, _), (_, b, _)| a.cmp(b));
+            files.sort_unstable_by(|(_, a, _), (_, b, _)| a.cmp(b));
 
             let mut new_oldest = *cut_off;
             for file in files {
@@ -482,8 +482,8 @@ async fn fix_permission(_path: &Path) {
 async fn clean_temp_dir(path: &Path) {
     info!("Deleting old temp files");
 
-    if let Ok(mut dir) = read_dir(path).map_ok(ReadDirStream::new).await {
-        while let Some(Ok(file)) = dir.next().await {
+    if let Ok(mut dir) = read_dir(path).await {
+        while let Ok(Some(file)) = dir.next_entry().await {
             let path = file.path();
             if path.is_file() && file.file_name().to_string_lossy().starts_with("proxyfile_") {
                 debug!("Delete old temp file: {:?}", path);
