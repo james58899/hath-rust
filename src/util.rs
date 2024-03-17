@@ -1,5 +1,6 @@
 use std::time::Duration;
 
+use const_format::concatcp;
 use futures::future::try_join_all;
 use openssl::sha::Sha1;
 use reqwest::Proxy;
@@ -15,7 +16,7 @@ pub fn string_to_hash(str: String) -> String {
 
 pub fn create_http_client(timeout: Duration, proxy: Option<Proxy>) -> reqwest::Client {
     let mut builder = reqwest::ClientBuilder::new()
-        .user_agent(format!("Hentai@Home {CLIENT_VERSION}"))
+        .user_agent(concatcp!("Hentai@Home ", CLIENT_VERSION))
         .tcp_keepalive(Duration::from_secs(75)) // Linux default keepalive inverval
         .connect_timeout(Duration::from_secs(5))
         .timeout(timeout)

@@ -52,9 +52,9 @@ static ALLOC: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 #[no_mangle]
 pub static mut malloc_conf: *const u8 = b"percpu_arena:phycpu,tcache:false,dirty_decay_ms:1000,muzzy_decay_ms:0\0".as_ptr();
 
-static VERSION : &str = concat!(env!("CARGO_PKG_VERSION"), "-", env!("VERGEN_GIT_SHA"));
-pub static CLIENT_VERSION: &str = "1.6.2";
-static MAX_KEY_TIME_DRIFT: RangeInclusive<i64> = -300..=300;
+const VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), "-", env!("VERGEN_GIT_SHA"));
+pub const CLIENT_VERSION: &str = "1.6.2";
+const MAX_KEY_TIME_DRIFT: RangeInclusive<i64> = -300..=300;
 
 #[derive(Parser)]
 #[command(version = VERSION)]

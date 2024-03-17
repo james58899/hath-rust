@@ -13,7 +13,7 @@ use axum::{
     response::Response,
     Router,
 };
-use once_cell::sync::Lazy;
+use const_format::concatcp;
 use tower::{timeout::TimeoutLayer, ServiceBuilder};
 
 use crate::{AppState, CLIENT_VERSION};
@@ -21,8 +21,7 @@ use crate::{AppState, CLIENT_VERSION};
 use self::connection_counter::ConnectionCounter;
 use self::logger::Logger;
 
-static SERVER_HEADER: Lazy<HeaderValue> =
-    Lazy::new(|| HeaderValue::from_maybe_shared(format!("Genetic Lifeform and Distributed Open Server {CLIENT_VERSION}")).unwrap());
+static SERVER_HEADER: HeaderValue = HeaderValue::from_static(concatcp!("Genetic Lifeform and Distributed Open Server ", CLIENT_VERSION));
 
 pub fn register_layer(router: Router<Arc<AppState>>, data: &AppState) -> Router<Arc<AppState>> {
     router
