@@ -8,7 +8,6 @@ use inquire::{
     CustomType, Text,
 };
 use log::{error, info, warn};
-use once_cell::sync::Lazy;
 use parking_lot::Mutex;
 use regex::Regex;
 use reqwest::Proxy;
@@ -53,24 +52,12 @@ static ALLOC: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 #[no_mangle]
 pub static mut malloc_conf: *const u8 = b"percpu_arena:phycpu,tcache:false,dirty_decay_ms:1000,muzzy_decay_ms:0\0".as_ptr();
 
-static VERSION: Lazy<String> = Lazy::new(|| {
-    format!(
-        "{}-{} {}",
-        built_info::PKG_VERSION,
-        built_info::GIT_COMMIT_HASH_SHORT.unwrap_or("unknown"),
-        built_info::BUILT_TIME_UTC
-    )
-});
+static VERSION : &str = concat!(env!("CARGO_PKG_VERSION"), "-", env!("VERGEN_GIT_SHA"));
 pub static CLIENT_VERSION: &str = "1.6.2";
 static MAX_KEY_TIME_DRIFT: RangeInclusive<i64> = -300..=300;
 
-mod built_info {
-    // The file has been placed there by the build script.
-    include!(concat!(env!("OUT_DIR"), "/built.rs"));
-}
-
 #[derive(Parser)]
-#[command(version = VERSION.as_str())]
+#[command(version = VERSION)]
 struct Args {
     /// Overrides the port set in the client's settings
     #[arg(long)]
@@ -170,12 +157,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let mut logger = Logger::init(args.log_dir).unwrap();
     logger.config().write_info(!args.disable_logging).flush(args.flush_log);
 
-    info!(
-        "Hentai@Home {} (Rust {}-{}) starting up",
-        CLIENT_VERSION,
-        built_info::PKG_VERSION,
-        built_info::GIT_COMMIT_HASH_SHORT.unwrap_or("unknown")
-    );
+    info!("Hentai@Home {} (Rust {}) starting up", CLIENT_VERSION, VERSION);
 
     let (id, key) = match read_credential(&args.data_dir).await? {
         Some(i) => i,
