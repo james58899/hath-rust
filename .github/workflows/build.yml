@@ -40,10 +40,7 @@ jobs:
     - uses: actions/checkout@v4
     - name: Install build tools
       run: |
-        wget https://apt.llvm.org/llvm.sh
-        chmod +x llvm.sh
-        sudo ./llvm.sh 18
-        sudo apt-get install -y crossbuild-essential-arm64 crossbuild-essential-armhf
+        sudo apt-get update && sudo apt-get install -y crossbuild-essential-arm64 crossbuild-essential-armhf
     - uses: actions/cache@v4
       with:
         path: |
@@ -56,16 +53,12 @@ jobs:
     - name: Install toolchain
       run: |
         rustup update
-        rustup toolchain install nightly
-        rustup target add --toolchain nightly ${{ matrix.target }}
+        rustup target add ${{ matrix.target }}
     - name: Build
       env:
-        CARGO_HOST_LINKER: "clang-18"
-        CARGO_HOST_RUSTFLAGS: "-Clink-arg=-fuse-ld=lld-18"
-        CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS: "-Clinker-plugin-lto -Clinker=clang-18 -Clink-arg=-fuse-ld=lld-18 -Clink-arg=--target=x86_64-unknown-linux-gnu"
-        CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_RUSTFLAGS: "-Clinker-plugin-lto -Clinker=clang-18 -Clink-arg=-fuse-ld=lld-18 -Clink-arg=--target=aarch64-unknown-linux-gnu"
-        CARGO_TARGET_ARMV7_UNKNOWN_LINUX_GNUEABIHF_RUSTFLAGS: "-Clinker-plugin-lto -Clinker=clang-18 -Clink-arg=-fuse-ld=lld-18 -Clink-arg=--target=armv7-unknown-linux-gnueabihf"
-      run: cargo +nightly -Ztarget-applies-to-host -Zhost-config build --verbose --release --target=${{ matrix.target }}
+        CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: "aarch64-linux-gnu-gcc"
+        CARGO_TARGET_ARMV7_UNKNOWN_LINUX_GNUEABIHF_LINKER: "arm-linux-gnueabihf-gcc"
+      run: cargo  build --verbose --release --target=${{ matrix.target }}
     - uses: actions/upload-artifact@v4
       with:
         name: hath-rust-${{ matrix.target }}
