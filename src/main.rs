@@ -230,6 +230,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     // Command listener
     let client2 = client.clone();
+    let cache_manager2 = cache_manager.clone();
     let downloader = Arc::new(Mutex::new(None));
     let downloader2 = downloader.clone();
     let logger_config = logger.config();
@@ -252,6 +253,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 }
                 Command::RefreshSettings => {
                     client2.refresh_settings().await;
+                    cache_manager2.update_settings(client2.settings());
                     if !args.disable_logging {
                         logger_config.write_info(!client2.settings().disable_logging());
                     }

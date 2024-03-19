@@ -32,16 +32,16 @@ use tokio_stream::wrappers::ReadDirStream;
 
 use crate::rpc::{InitSettings, Settings};
 
-const LRU_SIZE: usize = 1048576;
+const LRU_SIZE: usize = 1048576; // u16 * LRU_SIZE = 2MiB
 
 pub struct CacheManager {
     cache_dir: PathBuf,
     cache_date: Mutex<HashMap<PathBuf, FileTime>>,
-    lru_cache: RwLock<Vec<u16>>, // 2MiB
+    lru_cache: RwLock<Vec<u16>>,
     lru_clear_pos: Mutex<usize>,
-    settings: Arc<Settings>,
     temp_dir: PathBuf,
     total_size: Arc<AtomicU64>,
+    size_limit: AtomicU64,
 }
 
 impl CacheManager {
@@ -55,12 +55,13 @@ impl CacheManager {
         let new = Arc::new(Self {
             cache_dir: cache_dir.as_ref().to_path_buf(),
             cache_date: Mutex::new(HashMap::with_capacity(6000)),
-            lru_cache: RwLock::new(vec![0; LRU_SIZE]),
+            lru_cache: RwLock::new(vec![]),
             lru_clear_pos: Mutex::new(0),
-            settings,
             temp_dir: temp_dir.as_ref().to_path_buf(),
             total_size: Arc::new(AtomicU64::new(0)),
+            size_limit: AtomicU64::new(u64::MAX),
         });
+        new.update_settings(settings);
 
         clean_temp_dir(temp_dir.as_ref()).await;
 
@@ -167,6 +168,24 @@ impl CacheManager {
         }
     }
 
+    pub fn update_settings(&self, settings: Arc<Settings>) {
+        let size_limit = settings.size_limit();
+        info!("Set size limit to {:} GiB", size_limit / 1024 / 1024 / 1024);
+        self.size_limit.store(size_limit, Relaxed);
+
+        let disable_lru = settings.disable_lru_cache();
+        let disabled = self.lru_cache.read().is_empty();
+        if disable_lru && !disabled {
+            info!("Disable LRU cache");
+            let mut cache = self.lru_cache.write();
+            cache.clear();
+            cache.shrink_to_fit();
+        } else if !disable_lru && disabled {
+            info!("Enable LRU cache");
+            self.lru_cache.write().resize(LRU_SIZE, 0);
+        }
+    }
+
     fn start_background_task(new: Arc<Self>) {
         let manager = Arc::downgrade(&new);
         spawn(async move {
@@ -197,13 +216,15 @@ impl CacheManager {
         let bitmask: u16 = 1 << (hash[4] & 0b0000_1111);
 
         // Check if the file is already in the cache.
-        if self.lru_cache.read()[index] & bitmask != 0 {
+        if self.lru_cache.read().get(index).map(|bit| bit & bitmask != 0).unwrap_or(false) {
             // Already marked, return
             return;
         }
 
         // Mark the file as recently accessed.
-        self.lru_cache.write()[index] |= bitmask;
+        if let Some(bit) = self.lru_cache.write().get_mut(index) {
+            *bit |= bitmask;
+        }
 
         if update_file {
             let path = info.to_path(&self.cache_dir);
@@ -381,13 +402,15 @@ impl CacheManager {
         let mut pos = self.lru_clear_pos.lock();
         // 1048576 / (1week / 10s) =~ 17
         for _ in 0..17 {
-            self.lru_cache.write()[*pos] = 0;
-            *pos = (*pos + 1) % LRU_SIZE;
+            if let Some(bit) = self.lru_cache.write().get_mut(*pos) {
+                *bit = 0;
+                *pos = (*pos + 1) % LRU_SIZE;
+            }
         }
     }
 
     async fn check_cache_usage(&self) {
-        let mut need_free = self.total_size.load(Relaxed).saturating_sub(self.settings.size_limit());
+        let mut need_free = self.total_size.load(Relaxed).saturating_sub(self.size_limit.load(Relaxed));
         if need_free == 0 {
             return;
         }

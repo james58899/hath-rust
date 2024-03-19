@@ -51,6 +51,7 @@ pub struct Settings {
     disable_logging: AtomicBool,
     max_connection: AtomicU64,
     disable_ip_check: bool,
+    disable_lru_cache: AtomicBool,
 }
 
 pub struct InitSettings {
@@ -97,6 +98,10 @@ impl Settings {
         self.disable_logging.load(Ordering::Relaxed)
     }
 
+    pub fn disable_lru_cache(&self) -> bool {
+        self.disable_lru_cache.load(Ordering::Relaxed)
+    }
+
     fn update(&self, settings: HashMap<&str, &str>) {
         if let Some(size) = settings.get("disklimit_bytes").and_then(|s| s.parse().ok()) {
             self.size_limit.store(size, Ordering::Relaxed);
@@ -106,11 +111,11 @@ impl Settings {
             self.throttle_bytes.store(size, Ordering::Relaxed);
         }
 
-        if let Some(disabled) = settings.get("disable_logging").and_then(|s| s.parse().ok()) {
-            self.disable_logging.store(disabled, Ordering::Relaxed);
-        } else {
-            self.disable_logging.store(false, Ordering::Relaxed);
-        }
+        let disable_logging = settings.get("disable_logging").and_then(|s| s.parse().ok()).unwrap_or(false);
+        self.disable_logging.store(disable_logging, Ordering::Relaxed);
+
+        let use_less_memory = settings.get("use_less_memory").and_then(|s| s.parse().ok()).unwrap_or(false);
+        self.disable_lru_cache.store(use_less_memory, Ordering::Relaxed);
     }
 }
 
@@ -137,6 +142,7 @@ impl RPCClient {
                 disable_logging: AtomicBool::new(false),
                 max_connection: AtomicU64::new(max_connection),
                 disable_ip_check,
+                disable_lru_cache: AtomicBool::new(false),
             }),
         }
     }
