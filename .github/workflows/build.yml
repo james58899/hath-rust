@@ -28,6 +28,7 @@ jobs:
     runs-on: ubuntu-20.04
     if: inputs.skip-linux != true
     strategy:
+      fail-fast: false
       matrix:
         target: ["x86_64-unknown-linux-gnu", "aarch64-unknown-linux-gnu", "armv7-unknown-linux-gnueabihf"]
     env:
