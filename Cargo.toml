@@ -28,7 +28,7 @@ parking_lot = { version = "0.12", features = ["hardware-lock-elision", "deadlock
 pin-project-lite = "0.2"
 rand = { version = "0.8", features = ["small_rng"] }
 regex = "1.10"
-reqwest = { version = "0.11", default-features = false, features = ["rustls-tls", "stream", "socks"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "stream", "socks"] }
 scopeguard = "1.2"
 tempfile = "3.10"
 tokio = { version = "1", features = ["full", "parking_lot"] }
@@ -57,7 +57,6 @@ openssl-src = { version = "300", features = ["weak-crypto"] }
 vergen-gix = "1.0.0-beta.2"
 
 [patch.crates-io]
-reqwest = { git = "https://github.com/seanmonstar/reqwest", branch = "0.12-dev" }
 tokio-openssl = { git = "https://github.com/tokio-rs/tokio-openssl", rev = "01d32fa" }
 
 [profile.release]
