@@ -61,5 +61,6 @@ reqwest = { git = "https://github.com/seanmonstar/reqwest", branch = "0.12-dev" 
 tokio-openssl = { git = "https://github.com/tokio-rs/tokio-openssl", rev = "01d32fa" }
 
 [profile.release]
+opt-level = "s"
 lto = true
 strip = true
