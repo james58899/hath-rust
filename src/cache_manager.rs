@@ -56,7 +56,7 @@ impl CacheManager {
         let new = Arc::new(Self {
             cache_dir: cache_dir.as_ref().to_path_buf(),
             cache_date: Mutex::new(HashMap::with_capacity(6000)),
-            lru_cache: RwLock::new(vec![]),
+            lru_cache: RwLock::new(vec![0;LRU_SIZE]),
             lru_clear_pos: Mutex::new(thread_rng().gen_range(0..LRU_SIZE)),
             temp_dir: temp_dir.as_ref().to_path_buf(),
             total_size: Arc::new(AtomicU64::new(0)),
