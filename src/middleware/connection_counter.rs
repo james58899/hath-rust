@@ -67,11 +67,9 @@ where
     S: Service<Request, Response = Response> + Send + 'static,
     S::Future: Send + 'static,
 {
-    type Response = Response<ConnectionCounterFinalizer>;
-
     type Error = S::Error;
-
     type Future = BoxFuture<'static, Result<Self::Response, Self::Error>>;
+    type Response = Response<ConnectionCounterFinalizer>;
 
     fn poll_ready(&mut self, ctx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         self.service.poll_ready(ctx)
@@ -118,7 +116,6 @@ pin_project! {
 
 impl HttpBody for ConnectionCounterFinalizer {
     type Data = <Body as HttpBody>::Data;
-
     type Error = <Body as HttpBody>::Error;
 
     fn poll_frame(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {

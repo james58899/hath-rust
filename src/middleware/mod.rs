@@ -16,10 +16,10 @@ use axum::{
 use const_format::concatcp;
 use tower::{timeout::TimeoutLayer, ServiceBuilder};
 
-use crate::{AppState, CLIENT_VERSION};
-
-use self::connection_counter::ConnectionCounter;
-use self::logger::Logger;
+use crate::{
+    middleware::{connection_counter::ConnectionCounter, logger::Logger},
+    AppState, CLIENT_VERSION,
+};
 
 static SERVER_HEADER: HeaderValue = HeaderValue::from_static(concatcp!("Genetic Lifeform and Distributed Open Server ", CLIENT_VERSION));
 

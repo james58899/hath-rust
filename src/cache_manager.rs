@@ -501,6 +501,7 @@ impl CacheManager {
 #[cfg(unix)]
 async fn fix_permission(path: &Path) {
     use std::os::unix::prelude::PermissionsExt;
+
     use tokio::fs::set_permissions;
 
     _ = set_permissions(&path, PermissionsExt::from_mode(0o644)).await;
