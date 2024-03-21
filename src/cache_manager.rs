@@ -56,7 +56,7 @@ impl CacheManager {
         let new = Arc::new(Self {
             cache_dir: cache_dir.as_ref().to_path_buf(),
             cache_date: Mutex::new(HashMap::with_capacity(6000)),
-            lru_cache: RwLock::new(vec![0;LRU_SIZE]),
+            lru_cache: RwLock::new(vec![0; LRU_SIZE]),
             lru_clear_pos: Mutex::new(thread_rng().gen_range(0..LRU_SIZE)),
             temp_dir: temp_dir.as_ref().to_path_buf(),
             total_size: Arc::new(AtomicU64::new(0)),
@@ -418,16 +418,24 @@ impl CacheManager {
 
         debug!("Start cache cleaner: need_free={}", need_free);
         while need_free > 0 {
-            let map = self.cache_date.lock().clone();
-            let mut dirs = map.iter().collect::<Vec<_>>();
-            dirs.sort_unstable_by(|(_, a), (_, b)| a.cmp(b));
+            let target_dir;
+            let cut_off;
+            {
+                let map = self.cache_date.lock();
+                let mut dirs = map.iter().collect::<Vec<_>>();
+                if dirs.is_empty() {
+                    return;
+                }
+                dirs.sort_unstable_by(|(_, a), (_, b)| a.cmp(b));
+                target_dir = dirs[0].0.clone();
+                cut_off = dirs.get(1).map(|(_, t)| **t).unwrap_or_else(FileTime::now);
+            }
 
-            let files = read_dir(dirs[0].0).map_ok(ReadDirStream::new).await;
+            let files = read_dir(&target_dir).map_ok(ReadDirStream::new).await;
             if let Err(err) = files {
-                error!("Read cache dir {:?} error: {}", dirs[0].0, err);
+                error!("Read cache dir {:?} error: {}", target_dir, err);
                 break;
             }
-            let cut_off = dirs[1].1;
 
             let mut files: Vec<(DirEntry, FileTime, Metadata)> = files
                 .unwrap()
@@ -456,11 +464,11 @@ impl CacheManager {
                 .await;
             files.sort_unstable_by(|(_, a, _), (_, b, _)| a.cmp(b));
 
-            let mut new_oldest = *cut_off;
+            let mut new_oldest = cut_off;
             for file in files {
                 let (entry, mtime, metadata) = file;
 
-                if &mtime > cut_off || need_free == 0 {
+                if mtime > cut_off || need_free == 0 {
                     new_oldest = mtime;
                     break;
                 }
@@ -485,7 +493,7 @@ impl CacheManager {
                 need_free = need_free.saturating_sub(size);
             }
 
-            self.cache_date.lock().insert(dirs[0].0.to_path_buf(), new_oldest);
+            self.cache_date.lock().insert(target_dir, new_oldest);
         }
     }
 }
