@@ -168,6 +168,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let (shutdown_send, shutdown_recv) = mpsc::unbounded_channel::<()>();
     let settings = client.settings();
+    logger.config().write_info(!settings.disable_logging());
     delete_java_cache_data(args.data_dir).await; // Rust cache data incompatible with Java, so we must delete it
     let cache_manager = CacheManager::new(
         args.cache_dir,
