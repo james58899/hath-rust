@@ -47,9 +47,12 @@ tikv-jemallocator = { version = "0.5", features = ["background_threads", "unpref
 [target.'cfg(target_os = "macos")'.dependencies]
 tikv-jemallocator = { version = "0.5", features = ["unprefixed_malloc_on_supported_platforms"] } # jemalloc not support background threads on macos
 
+[target.'cfg(unix)'.dependencies]
+rustix = { version = "0.38.32", features = ["fs"] }
+
 [target.'cfg(windows)'.dependencies]
 tray-icon = { version = "0.12", default-features = false }
-windows = { version = "0.52", features = ["Win32_Foundation", "Win32_System_Console", "Win32_UI_WindowsAndMessaging"] }
+windows = { version = "0.52", features = ["Win32_Foundation", "Win32_System_Console", "Win32_UI_WindowsAndMessaging", "Win32_Storage_FileSystem"] }
 tao = "0.26"
 
 [build-dependencies]

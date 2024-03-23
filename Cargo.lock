@@ -1768,6 +1768,7 @@ dependencies = [
  "rand",
  "regex",
  "reqwest",
+ "rustix",
  "scopeguard",
  "tao",
  "tempfile",

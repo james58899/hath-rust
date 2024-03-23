@@ -28,10 +28,7 @@ Features that are included in the official and are working.
 * Speed test
 * Cache size management
 * Logging
-
-### Not works
-Included in the official release but not yet implemented.
-* Disk space check[^disk]
+* Disk space check
 
 ### No planned
 * HTTP/2[^h2]
@@ -57,6 +54,5 @@ The following conditions will be passed before release.
 See https://doc.rust-lang.org/stable/rustc/platform-support.html
 
 
-[^disk]: Only checks the cache size and does not aware of downloads or other space usages.
 [^h2]: Multiplexing is useless for H@H, and a large number of connections will take up more system resources.
 [^filename]: If the filename is not sent, some browsers may download using the wrong name.

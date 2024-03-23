@@ -34,6 +34,7 @@ use tokio_stream::wrappers::ReadDirStream;
 use crate::rpc::{InitSettings, Settings};
 
 const LRU_SIZE: usize = 1048576; // u16 * LRU_SIZE = 2MiB
+const SIZE_100MB: u64 = 100 * 1024 * 1024;
 
 pub struct CacheManager {
     cache_dir: PathBuf,
@@ -411,12 +412,22 @@ impl CacheManager {
     }
 
     async fn check_cache_usage(&self) {
-        let mut need_free = self.total_size.load(Relaxed).saturating_sub(self.size_limit.load(Relaxed));
+        let total_size = self.total_size.load(Relaxed);
+        let size_limit = self.size_limit.load(Relaxed).saturating_sub(SIZE_100MB); // Reserve 100MiB in size limit
+        let mut need_free = total_size.saturating_sub(size_limit);
+
+        if let Some(free) = get_available_space(&self.cache_dir) {
+            if free < SIZE_100MB {
+                warn!("Disk space is low than 100MiB: available={}MiB", free / 1024 / 1024);
+                need_free += SIZE_100MB.saturating_sub(free);
+            }
+        }
+
         if need_free == 0 {
             return;
         }
 
-        debug!("Start cache cleaner: need_free={}", need_free);
+        debug!("Start cache cleaner: need_free={}bytes", need_free);
         while need_free > 0 {
             let target_dir;
             let cut_off;
@@ -510,6 +521,35 @@ async fn fix_permission(path: &Path) {
 #[cfg(not(unix))]
 async fn fix_permission(_path: &Path) {
     // Skip
+}
+
+#[cfg(unix)]
+fn get_available_space(path: &Path) -> Option<u64> {
+    use rustix::fs::statvfs;
+    if let Ok(stat) = statvfs(path) {
+        Some(stat.f_bavail * stat.f_bsize)
+    } else {
+        None
+    }
+}
+
+#[cfg(windows)]
+fn get_available_space(path: &Path) -> Option<u64> {
+    use windows::{core::HSTRING, Win32::Storage::FileSystem::GetDiskFreeSpaceExW};
+
+    let full_path = path.canonicalize().ok()?;
+    let mut free: u64 = 0;
+
+    if unsafe { GetDiskFreeSpaceExW(&HSTRING::from(full_path.as_path()), Some(&mut free), None, None) }.is_ok() {
+        Some(free)
+    } else {
+        None
+    }
+}
+
+#[cfg(not(any(unix, windows)))]
+fn get_available_space(path: &Path) -> Option<u64> {
+    None // Not support
 }
 
 async fn clean_temp_dir(path: &Path) {
