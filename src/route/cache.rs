@@ -119,7 +119,7 @@ pub(super) async fn hath(
             let mut reqwest = data.reqwest.clone();
             let mut sources = sources.iter().cycle();
             'retry: for retry in 0..3 {
-                let mut file = match OpenOptions::new().write(true).create(true).open(temp_path2.as_ref()).await {
+                let mut file = match OpenOptions::new().write(true).create(true).truncate(true).open(&*temp_path2).await {
                     Ok(mut f) => {
                         if let Err(err) = f.seek(SeekFrom::Start(progress)).await {
                             error!("Proxy temp file seek fail: {}", err);
