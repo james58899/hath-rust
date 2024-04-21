@@ -19,6 +19,7 @@ pub fn create_http_client(timeout: Duration, proxy: Option<Proxy>) -> reqwest::C
         .user_agent(concatcp!("Hentai@Home ", CLIENT_VERSION))
         .tcp_keepalive(Duration::from_secs(75)) // Linux default keepalive inverval
         .connect_timeout(Duration::from_secs(5))
+        .read_timeout(Duration::from_secs(30))
         .timeout(timeout)
         .pool_idle_timeout(Duration::from_secs(3600))
         .pool_max_idle_per_host(8)
