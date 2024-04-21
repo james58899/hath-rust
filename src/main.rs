@@ -242,15 +242,16 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 Command::ReloadCert => {
                     match client2.get_cert().await {
                         Some(cert) => server_handle.update_cert(cert),
-                        None => error!("Fetch SSL cert fail"),
+                        None => {
+                            error!("Fetch SSL cert fail");
+                            // Retry after 10s
+                            let tx2 = tx.clone();
+                            tokio::spawn(async move {
+                                sleep(Duration::from_secs(10)).await;
+                                _ = tx2.send(Command::ReloadCert).await;
+                            });
+                        }
                     }
-
-                    // Retry after 10s
-                    let tx2 = tx.clone();
-                    tokio::spawn(async move {
-                        sleep(Duration::from_secs(10)).await;
-                        _ = tx2.send(Command::ReloadCert).await;
-                    });
                 }
                 Command::RefreshSettings => {
                     client2.refresh_settings().await;
