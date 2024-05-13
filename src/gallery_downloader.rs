@@ -90,8 +90,7 @@ impl GalleryDownloader {
             let downloaded_files = Arc::new(Mutex::new(HashSet::new()));
             'retry: for retry in 0..10 {
                 let semaphore = Arc::new(Semaphore::new(MAX_DOWNLOAD_TASK as usize));
-                let force_image_server = retry % 2 != 0;
-                let use_proxy = force_image_server && self.proxy.is_some();
+                let use_proxy = retry != 0 && self.proxy.is_some();
                 let reqwest = if use_proxy {
                     util::create_http_client(Duration::from_secs(300), self.proxy.clone())
                 } else {
@@ -117,7 +116,7 @@ impl GalleryDownloader {
                     let mut start_time = Instant::now();
                     let url = self
                         .client
-                        .dl_fetch(meta.gid, info.page, info.fileindex, &info.xres, force_image_server)
+                        .dl_fetch(meta.gid, info.page, info.fileindex, &info.xres, retry)
                         .await
                         .and_then(|s| Url::parse(&s[0]).ok());
                     match url {

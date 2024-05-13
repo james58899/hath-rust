@@ -374,11 +374,11 @@ The program will now terminate.
         None
     }
 
-    pub async fn dl_fetch(&self, gid: i32, page: usize, fileindex: usize, xres: &str, force_image_server: bool) -> Option<Vec<String>> {
+    pub async fn dl_fetch(&self, gid: i32, page: usize, fileindex: usize, xres: &str, retry: u8) -> Option<Vec<String>> {
         if let Ok(res) = self
             .send_action(
                 "dlfetch",
-                Some(&format!("{};{};{};{};{}", gid, page, fileindex, xres, u8::from(force_image_server))),
+                Some(&format!("{};{};{};{};{}", gid, page, fileindex, xres, retry)),
             )
             .await
         {
