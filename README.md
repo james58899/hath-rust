@@ -1,11 +1,7 @@
 # hath-rust
 [![Build](../../actions/workflows/build.yml/badge.svg)](../../actions/workflows/build.yml)
 
-Hentai@Home but rusty.
-
-**Under development, stability is not guaranteed.**
-
-Unofficial.
+The unofficial Hentai@Home client written in Rust.
 
 ## Install
 Read the [Wiki](https://github.com/james58899/hath-rust/wiki/Install)
@@ -18,7 +14,6 @@ Features not included in the official.
 * TLS 1.3
 * Seamless certificate update
 * Using ChaCha20 on hardware without AES acceleration
-* Download cache files through proxy
 * Send filename to browser[^filename]
 
 ### Works
@@ -29,6 +24,7 @@ Features that are included in the official and are working.
 * Cache size management
 * Logging
 * Disk space check
+* Download cache files through proxy
 
 ### No planned
 * HTTP/2[^h2]
