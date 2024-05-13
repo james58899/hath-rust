@@ -1754,6 +1754,7 @@ dependencies = [
  "tower",
  "tower-http",
  "tray-icon",
+ "unicode-segmentation",
  "vergen-gix",
  "windows",
 ]

@@ -18,6 +18,7 @@ use tokio::{
     sync::Semaphore,
     time::{sleep, sleep_until, Instant},
 };
+use unicode_segmentation::UnicodeSegmentation;
 
 use crate::{error::Error, rpc::RPCClient, util};
 
@@ -60,17 +61,24 @@ impl GalleryDownloader {
                 }
             };
 
-            let dir = self.download_dir.join(if meta.title.len() > 100 {
-                let mut truncate_pos = 97;
-                // Align unicode char boundary
-                while !meta.title.is_char_boundary(truncate_pos) && truncate_pos != 0 {
-                    truncate_pos = truncate_pos.saturating_sub(1);
-                }
-                format!("{}... [{}{}]", &meta.title[..truncate_pos], meta.gid, meta.xres_title)
+            // Create directory
+            let name_suffix = format!(" [{}{}]", meta.gid, meta.xres_title);
+            let name_max_chars = 125 - name_suffix.len();
+            let name_max_bytes = 255 - name_suffix.len();
+            let name = if meta.title.chars().count() <= name_max_chars && meta.title.len() <= name_max_bytes {
+                format!("{}{}", meta.title, name_suffix)
             } else {
-                format!("{} [{}{}]", meta.title, meta.gid, meta.xres_title)
-            });
-
+                let mut truncate_pos = 0;
+                // Search last grapheme pos within length limit
+                for (index, (pos, _)) in meta.title.grapheme_indices(true).enumerate() {
+                    if index + 3 > name_max_chars || pos + 3 > name_max_bytes {
+                        break;
+                    }
+                    truncate_pos = pos;
+                }
+                format!("{}...{}", &meta.title[..truncate_pos], name_suffix)
+            };
+            let dir = self.download_dir.join(name);
             if !dir.exists() {
                 if let Err(err) = create_dir_all(&dir).await {
                     error!("Create download directory fail: {}", err);
@@ -78,6 +86,7 @@ impl GalleryDownloader {
                 }
             }
 
+            // Download files
             let downloaded_files = Arc::new(Mutex::new(HashSet::new()));
             'retry: for retry in 0..10 {
                 let semaphore = Arc::new(Semaphore::new(MAX_DOWNLOAD_TASK as usize));

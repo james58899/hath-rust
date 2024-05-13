@@ -36,6 +36,7 @@ tokio-openssl = "0.6"
 tokio-stream = { version = "0.1", default-features = false, features = ["fs"] }
 tower = { version = "0.4", features = ["util", "timeout"] }
 tower-http = { version = "0.5", features = ["fs"] }
+unicode-segmentation = "1.11.0"
 
 # cpufeatures not support all platforms
 [target.'cfg(any(target_arch = "x86", target_arch = "x86_64", target_arch = "aarch64"))'.dependencies]
