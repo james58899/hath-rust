@@ -29,7 +29,7 @@ use crate::{
     util::{create_http_client, string_to_hash},
 };
 
-const API_VERSION: i32 = 160; // For server check capabilities.
+const API_VERSION: i32 = 169; // For server check capabilities.
 const DEFAULT_SERVER: &str = "rpc.hentaiathome.net";
 
 type RequestError = Box<dyn std::error::Error + Send + Sync>;
@@ -268,12 +268,15 @@ impl RPCClient {
                     r#"
 
 ************************************************************************************************************************************
-The client has failed the external connection test.
-The server failed to verify that this client is online and available from the Internet.
-If you are behind a firewall, please check that port {} is forwarded to this computer.
-You might also want to check that {} is your actual public IP address.
-If you need assistance with forwarding a port to this client, locate a guide for your particular router at http://portforward.com/
-The client will remain running so you can run port connection tests.
+The client has failed the external connectivity test.
+The server could not connect to the client, which usually means it is not publicly reachable from the internet.
+If you are behind a NAT and/or firewall, check that port {} is open and forwarded to this computer.
+If you need assistance with forwarding a port to this client, locate a guide for your particular router at https://portforward.com/
+You may also want to check that {} matches your public IPv4 address.
+Your outgoing and incoming IP address must be the same; the address above is your current outgoing IP as seen by the server.
+If your setup is using a non-transparent proxy, you may be able to fix this by starting the client with --disable-ip-origin-check
+This is mostly applicable if you are seeing 'Rejecting connection request during startup' errors referencing a local network IP.
+The client will remain running so you can diagnose firewall and port forwarding issues.
 Use Program -> Exit in windowed mode or hit Ctrl+C in console mode to exit the program.
 ************************************************************************************************************************************
 
@@ -286,7 +289,7 @@ Use Program -> Exit in windowed mode or hit Ctrl+C in console mode to exit the p
 
 ************************************************************************************************************************************
 The server detected that another client was already connected from this computer or local network.
-You can only have one client running per public IP address.
+You can only have one client running per public IPv4 address.
 The program will now terminate.
 ************************************************************************************************************************************
 
@@ -296,8 +299,9 @@ The program will now terminate.
                     r#"
 
 ************************************************************************************************************************************
-The server detected that another client is already using this client ident.
-If you want to run more than one client, you have to apply for additional idents.
+The server detected that another client is already using this Client ID.
+If the client was not shut down properly and your IP changed, you may have to wait up to 24 hours for the old session to time out.
+If you want to run more than one client, you have to apply for additional Client IDs.
 The program will now terminate.
 ************************************************************************************************************************************
 
