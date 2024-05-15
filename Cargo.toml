@@ -52,7 +52,7 @@ tikv-jemallocator = { version = "0.5", features = ["unprefixed_malloc_on_support
 rustix = { version = "0.38.32", features = ["fs"] }
 
 [target.'cfg(windows)'.dependencies]
-tray-icon = { version = "0.13.0", default-features = false }
+tray-icon = { version = "0.14.0", default-features = false }
 windows = { version = "0.56", features = ["Win32_Foundation", "Win32_System_Console", "Win32_UI_WindowsAndMessaging", "Win32_Storage_FileSystem"] }
 tao = "0.28"
 
