@@ -380,10 +380,7 @@ The program will now terminate.
 
     pub async fn dl_fetch(&self, gid: i32, page: usize, fileindex: usize, xres: &str, retry: u8) -> Option<Vec<String>> {
         if let Ok(res) = self
-            .send_action(
-                "dlfetch",
-                Some(&format!("{};{};{};{};{}", gid, page, fileindex, xres, retry)),
-            )
+            .send_action("dlfetch", Some(&format!("{};{};{};{};{}", gid, page, fileindex, xres, retry)))
             .await
         {
             if res.is_ok() {
