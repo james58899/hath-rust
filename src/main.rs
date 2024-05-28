@@ -518,7 +518,7 @@ fn switch_window(hide: bool) {
 
     if window.0 != 0 {
         unsafe {
-            ShowWindow(window, if hide { SW_HIDE } else { SW_SHOW });
+            let _ = ShowWindow(window, if hide { SW_HIDE } else { SW_SHOW });
         }
     }
 }
