@@ -447,7 +447,7 @@ fn build_tray_icon() {
     };
     use tray_icon::{
         menu::{Menu, MenuEvent},
-        ClickType, TrayIconBuilder, TrayIconEvent,
+        MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent,
     };
 
     // Show console
@@ -470,8 +470,15 @@ fn build_tray_icon() {
             event_loop.run(move |_event, _, control_flow| {
                 *control_flow = ControlFlow::WaitUntil((Instant::now() + Duration::from_millis(100)).into());
 
-                if let Ok(event) = tray_channel.try_recv() {
-                    if event.click_type == ClickType::Double {
+                if let Ok(TrayIconEvent::Click {
+                    id: _,
+                    position: _,
+                    rect: _,
+                    button,
+                    button_state,
+                }) = tray_channel.try_recv()
+                {
+                    if button == MouseButton::Left && button_state == MouseButtonState::Up {
                         console_hide = !console_hide;
                         switch_window(console_hide)
                     }
