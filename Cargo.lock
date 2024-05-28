@@ -1716,7 +1716,7 @@ checksum = "e5274423e17b7c9fc20b6e7e208532f9b19825d82dfd615708b70edd83df41f1"
 
 [[package]]
 name = "hath-rust"
-version = "1.5.0"
+version = "1.5.1"
 dependencies = [
  "arc-swap",
  "async-stream",
