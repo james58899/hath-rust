@@ -102,6 +102,10 @@ struct Args {
     /// Configure proxy for fetch cache
     #[arg(long)]
     proxy: Option<String>,
+
+    /// Force background cache scan, even if verify cache integrity is enabled
+    #[arg(long, default_value_t = false)]
+    force_background_scan: bool,
 }
 
 type DownloadState = Mutex<HashMap<[u8; 20], (watch::Receiver<Option<Arc<TempPath>>>, Arc<watch::Sender<u64>>)>>;
@@ -175,6 +179,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         args.temp_dir,
         settings.clone(),
         &init_settings,
+        args.force_background_scan,
         shutdown_send.clone(),
     )
     .await?;

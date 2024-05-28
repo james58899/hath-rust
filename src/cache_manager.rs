@@ -52,6 +52,7 @@ impl CacheManager {
         temp_dir: P,
         settings: Arc<Settings>,
         init_settings: &InitSettings,
+        force_background_scan: bool,
         shutdown: UnboundedSender<()>,
     ) -> Result<Arc<Self>, Error> {
         let new = Arc::new(Self {
@@ -70,7 +71,7 @@ impl CacheManager {
         let manager = new.clone();
         let verify_cache = init_settings.verify_cache();
         let static_range = init_settings.static_range();
-        if verify_cache {
+        if verify_cache && !force_background_scan {
             // Force check cache
             info!("Start force cache check");
             new.scan_cache(static_range, 16, verify_cache).await?;
