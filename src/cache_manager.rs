@@ -1,5 +1,6 @@
 use std::{
-    collections::HashMap,
+    collections::{BTreeMap, HashMap},
+    ffi::OsStr,
     fmt::Display,
     fs::Metadata,
     io::Error,
@@ -287,9 +288,10 @@ impl CacheManager {
             .map(|dir| async move {
                 let mut time = FileTime::now();
                 let mut stream = read_dir(&dir).await?;
+                let mut btree = BTreeMap::new();
                 while let Some(entry) = stream.next_entry().await? {
                     let path = entry.path();
-                    let metadata = metadata(&path).await;
+                    let metadata = entry.metadata().await;
                     if let Err(err) = metadata {
                         error!("Read cache file metadata error: path={:?}, err={}", path, err);
                         continue;
@@ -324,8 +326,40 @@ impl CacheManager {
                     }
 
                     if verify_cache {
+                        // We need verify cache integrity, save path to btree and delay size calculation
+                        let inode = get_inode(&metadata).unwrap_or(btree.len() as u64); // sort by inode or sequential
+                        btree.insert(inode, path);
+                    } else {
+                        self.total_size.fetch_add(file_real_size_fast(&path, &metadata)?, Relaxed);
+
+                        // Add recently accessed file to the cache.
+                        let mtime = FileTime::from_last_modification_time(&metadata);
+                        if mtime > lru_cutoff {
+                            self.mark_recently_accessed(&info, false).await;
+                        }
+                        if mtime < time {
+                            time = mtime;
+                        }
+                    }
+                }
+
+                if verify_cache {
+                    while let Some((_, path)) = btree.pop_first() {
+                        let mut file = match File::open(&path).await {
+                            Ok(file) => file,
+                            Err(err) => {
+                                error!("Open cache file {} error: {}", path.display(), err);
+                                continue;
+                            }
+                        };
+                        let info = match path.file_name().and_then(OsStr::to_str).and_then(CacheFileInfo::from_file_id) {
+                            Some(info) => info,
+                            None => {
+                                warn!("Failed to parse cache info: {:?}", path);
+                                continue;
+                            }
+                        };
                         let mut hasher = Sha1::new();
-                        let mut file = File::open(&path).await?;
                         let mut buf = vec![0; 1024 * 1024]; // 1MiB
                         loop {
                             match file.read(&mut buf).await {
@@ -352,17 +386,20 @@ impl CacheManager {
                             }
                             continue;
                         }
-                    }
 
-                    self.total_size.fetch_add(file_real_size_fast(&path, &metadata)?, Relaxed);
+                        // File is correct, calculate size
+                        if let Ok(metadata) = file.metadata().await {
+                            self.total_size.fetch_add(file_real_size_fast(&path, &metadata)?, Relaxed);
 
-                    // Add recently accessed file to the cache.
-                    let mtime = FileTime::from_last_modification_time(&metadata);
-                    if mtime > lru_cutoff {
-                        self.mark_recently_accessed(&info, false).await;
-                    }
-                    if mtime < time {
-                        time = mtime;
+                            // Add recently accessed file to the cache.
+                            let mtime = FileTime::from_last_modification_time(&metadata);
+                            if mtime > lru_cutoff {
+                                self.mark_recently_accessed(&info, false).await;
+                            }
+                            if mtime < time {
+                                time = mtime;
+                            }
+                        }
                     }
                 }
 
@@ -551,6 +588,27 @@ fn get_available_space(path: &Path) -> Option<u64> {
 #[cfg(not(any(unix, windows)))]
 fn get_available_space(path: &Path) -> Option<u64> {
     None // Not support
+}
+
+#[cfg(unix)]
+fn get_inode(metadata: &Metadata) -> Option<u64> {
+    use std::os::unix::fs::MetadataExt;
+
+    Some(metadata.ino())
+}
+
+#[cfg(windows)]
+fn get_inode(metadata: &Metadata) -> Option<u64> {
+    use std::os::windows::fs::MetadataExt;
+
+    // On windows file_index not stable yet, use ctime instead
+    Some(metadata.creation_time())
+}
+
+#[cfg(not(any(unix, windows)))]
+fn get_inode(_metadata: &Metadata) -> Option<u64> {
+    // Not support
+    None
 }
 
 async fn clean_temp_dir(path: &Path) {
