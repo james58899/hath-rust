@@ -11,6 +11,10 @@ on:
         required: false
         type: boolean
         default: false
+      skip-linux-musl:
+        required: false
+        type: boolean
+        default: false
       skip-windows:
         required: false
         type: boolean
@@ -54,6 +58,50 @@ jobs:
         CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: "aarch64-linux-gnu-gcc"
         CARGO_TARGET_ARMV7_UNKNOWN_LINUX_GNUEABIHF_LINKER: "arm-linux-gnueabihf-gcc"
       run: cargo  build --verbose --release --target=${{ matrix.target }}
+    - uses: actions/upload-artifact@v4
+      with:
+        name: hath-rust-${{ matrix.target }}
+        path: target/${{ matrix.target }}/release/hath-rust
+  build-linux-musl:
+    runs-on: ubuntu-latest
+    if: inputs.skip-linux-musl != true
+    strategy:
+      fail-fast: false
+      matrix:
+        target: ["x86_64-unknown-linux-musl", "aarch64-unknown-linux-musl", "armv7-unknown-linux-musleabihf"]
+    steps:
+    - uses: actions/checkout@v4
+    - name: Install build tools
+      run: |
+        wget https://apt.llvm.org/llvm.sh
+        chmod +x llvm.sh
+        sudo ./llvm.sh 18
+        sudo apt-get install -y crossbuild-essential-arm64 crossbuild-essential-armhf
+    - uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cargo/bin/
+          ~/.cargo/registry/index/
+          ~/.cargo/registry/cache/
+          ~/.cargo/git/db/
+          target/
+        key: cargo-${{ matrix.target }}-${{ hashFiles('**/Cargo.lock') }}
+    - name: Install toolchain
+      run: |
+        rustup update
+        rustup toolchain install nightly
+        rustup target add --toolchain nightly ${{ matrix.target }}
+    - name: Build
+      env:
+        CC: clang-18
+        CXX: clang-18
+        CFLAGS: "-fuse-ld=lld-18"
+        CXXFLAGS: "-fuse-ld=lld-18"
+        CARGO_HOST_RUSTFLAGS: "-Clinker=clang-18 -Clink-arg=-fuse-ld=lld-18"
+        CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_RUSTFLAGS: "-Clinker=clang-18 -Clink-arg=-fuse-ld=lld-18 -Clink-arg=--target=x86_64-unknown-linux-musl"
+        CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_RUSTFLAGS: "-Clinker=clang-18 -Clink-arg=-fuse-ld=lld-18 -Clink-arg=--target=aarch64-unknown-linux-musl"
+        CARGO_TARGET_ARMV7_UNKNOWN_LINUX_MUSLEABIHF_RUSTFLAGS: "-Clinker=clang-18 -Clink-arg=-fuse-ld=lld-18 -Clink-arg=--target=armv7-unknown-linux-musleabihf"
+      run: cargo +nightly -Ztarget-applies-to-host -Zhost-config build --verbose --release --target=${{ matrix.target }}
     - uses: actions/upload-artifact@v4
       with:
         name: hath-rust-${{ matrix.target }}
