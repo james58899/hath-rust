@@ -30,7 +30,7 @@ jobs:
           mv artifacts/hath-rust-universal-apple-darwin/hath-rust hath-rust-universal-apple-darwin
           mv artifacts/hath-rust-aarch64-linux-android/hath-rust hath-rust-aarch64-linux-android
           mv artifacts/hath-rust-armv7-linux-androideabi/hath-rust hath-rust-armv7-linux-androideabi
-          mv artifacts/hath-rust-i686-linux-android/hath-rust hath-rust-i686-linux-android
+          mv artifacts/hath-rust-i686-linux-android/hath-rust hath-rust-i686-linux-android || true
           mv artifacts/hath-rust-x86_64-linux-android/hath-rust hath-rust-x86_64-linux-android
       - name: Create release
         uses: softprops/action-gh-release@v2
