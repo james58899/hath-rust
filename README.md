@@ -46,6 +46,8 @@ The following conditions will be passed before release.
 | i686-pc-windows-msvc          |  ✅   |  ✅  |  ❌   |
 | x86_64-apple-darwin           |  ✅   |  ❌  |  ❌   |
 | aarch64-apple-darwin          |  ✅   |  ✅  |  ❌   |
+| *-musl (Experimental)         |  ❌   |  ❌  |  ❌   |
+| *-android (Experimental)      |  ❌   |  ❌  |  ❌   |
 
 See https://doc.rust-lang.org/stable/rustc/platform-support.html
 
