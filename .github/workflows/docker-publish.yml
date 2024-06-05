@@ -21,6 +21,7 @@ jobs:
       skip-windows: true
       skip-macos: true
       skip-linux-musl: true
+      skip-android: true
   Docker:
     needs: Build
     runs-on: ubuntu-latest
