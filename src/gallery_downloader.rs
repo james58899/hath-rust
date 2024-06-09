@@ -230,7 +230,7 @@ impl GalleryDownloader {
                         debug!("GalleryDownloader: Parsed filecount={}", filecount);
                     }
                     "MINXRES" => {
-                        if Regex::new(r"^org|\\d+$").unwrap().is_match(split[1]) {
+                        if Regex::new(r"^(?:org|\d+)$").unwrap().is_match(split[1]) {
                             minxres = split[1].to_string();
                             debug!("GalleryDownloader: Parsed minxres={}", minxres);
                         } else {
