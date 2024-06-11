@@ -52,16 +52,17 @@ tikv-jemallocator = { version = "0.5", features = ["unprefixed_malloc_on_support
 rustix = { version = "0.38.34", features = ["fs"] }
 
 [target.'cfg(windows)'.dependencies]
-tray-icon = { version = "0.14.1", default-features = false }
+tray-icon = { version = "0.14.3", default-features = false }
 windows = { version = "0.56", features = ["Win32_Foundation", "Win32_System_Console", "Win32_UI_WindowsAndMessaging", "Win32_Storage_FileSystem"] }
 tao = "0.28"
 
 [build-dependencies]
 openssl-src = { version = "300", features = ["weak-crypto"] }
-vergen-gix = "1.0.0-beta.2"
+vergen-gix = "1.0.0"
 
 [patch.crates-io]
 tokio-openssl = { git = "https://github.com/tokio-rs/tokio-openssl", rev = "01d32fa" }
+vergen-gix = { git = "https://github.com/rustyhorde/vergen", rev = "0c7c762" } # vergen-gix not release
 
 [profile.release]
 opt-level = "s"
