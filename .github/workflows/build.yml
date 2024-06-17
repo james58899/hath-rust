@@ -93,19 +93,17 @@ jobs:
     - name: Install toolchain
       run: |
         rustup update
-        rustup toolchain install nightly
-        rustup target add --toolchain nightly ${{ matrix.target }}
+        rustup target add ${{ matrix.target }}
     - name: Build
       env:
         CC: clang-18
         CXX: clang-18
         CFLAGS: "-fuse-ld=lld-18"
         CXXFLAGS: "-fuse-ld=lld-18"
-        CARGO_HOST_RUSTFLAGS: "-Clinker=clang-18 -Clink-arg=-fuse-ld=lld-18"
         CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_RUSTFLAGS: "-Clinker=clang-18 -Clink-arg=-fuse-ld=lld-18 -Clink-arg=--target=x86_64-unknown-linux-musl"
         CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_RUSTFLAGS: "-Clinker=clang-18 -Clink-arg=-fuse-ld=lld-18 -Clink-arg=--target=aarch64-unknown-linux-musl"
         CARGO_TARGET_ARMV7_UNKNOWN_LINUX_MUSLEABIHF_RUSTFLAGS: "-Clinker=clang-18 -Clink-arg=-fuse-ld=lld-18 -Clink-arg=--target=armv7-unknown-linux-musleabihf"
-      run: cargo +nightly -Ztarget-applies-to-host -Zhost-config build --verbose --release --target=${{ matrix.target }}
+      run: cargo build --verbose --release --target=${{ matrix.target }}
     - uses: actions/upload-artifact@v4
       with:
         name: hath-rust-${{ matrix.target }}
