@@ -53,7 +53,7 @@ rustix = { version = "0.38.34", features = ["fs"] }
 
 [target.'cfg(windows)'.dependencies]
 tray-icon = { version = "0.14.3", default-features = false }
-windows = { version = "0.56", features = ["Win32_Foundation", "Win32_System_Console", "Win32_UI_WindowsAndMessaging", "Win32_Storage_FileSystem"] }
+windows = { version = "0.57", features = ["Win32_Foundation", "Win32_System_Console", "Win32_UI_WindowsAndMessaging", "Win32_Storage_FileSystem"] }
 tao = "0.28"
 
 [build-dependencies]
@@ -63,6 +63,9 @@ vergen-gix = "1.0.0"
 [patch.crates-io]
 tokio-openssl = { git = "https://github.com/tokio-rs/tokio-openssl", rev = "01d32fa" }
 vergen-gix = { git = "https://github.com/rustyhorde/vergen", rev = "0c7c762" } # vergen-gix not release
+url = { git = "https://github.com/servo/rust-url", tag = "idna-v1.0.1" }
+form_urlencoded = { git = "https://github.com/servo/rust-url", tag = "idna-v1.0.1" }
+percent-encoding = { git = "https://github.com/servo/rust-url", tag = "idna-v1.0.1" }
 
 [profile.release]
 opt-level = "s"
