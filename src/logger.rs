@@ -1,7 +1,7 @@
 use std::{
     path::{Path, PathBuf},
     sync::{
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicU8, Ordering},
         Arc,
     },
 };
@@ -29,6 +29,7 @@ pub struct Logger {
 pub struct LoggerConfig {
     write_info: AtomicBool,
     flush: AtomicBool,
+    console_level: AtomicU8,
 }
 
 struct LoggerWorker {
@@ -42,12 +43,19 @@ struct LoggerMessage {
     message: String,
 }
 
-impl Logger {
-    pub fn init<P: AsRef<Path>>(log_dir: P) -> Result<Self, SetLoggerError> {
-        let config = Arc::new(LoggerConfig {
+impl Default for LoggerConfig {
+    fn default() -> Self {
+        Self {
             write_info: true.into(),
             flush: false.into(),
-        });
+            console_level: 0.into(),
+        }
+    }
+}
+
+impl Logger {
+    pub fn init<P: AsRef<Path>>(log_dir: P) -> Result<Self, SetLoggerError> {
+        let config = Arc::new(LoggerConfig::default());
 
         let (worker, handle) = LoggerWorker::new(log_dir, config.clone());
         let worker = Arc::new(worker);
@@ -93,6 +101,11 @@ impl LoggerConfig {
         self.flush.store(enabled, Ordering::Relaxed);
         self
     }
+
+    pub fn console_level(&self, level: u8) -> &Self {
+        self.console_level.store(level, Ordering::Relaxed);
+        self
+    }
 }
 
 impl LoggerWorker {
@@ -131,12 +144,21 @@ impl LoggerWorker {
                             break
                         }
                         let log = log.unwrap();
+                        let msg = &[log.message.as_bytes(), b"\n"].concat();
+
+                        let console_level = match config.console_level.load(Ordering::Relaxed) {
+                            0 => LevelFilter::Debug,
+                            1 => LevelFilter::Info,
+                            2 => LevelFilter::Warn,
+                            3 => LevelFilter::Error,
+                            _ => LevelFilter::Off,
+                        };
 
                         if log.level <= Level::Warn {
-                            let msg = &[log.message.as_bytes(), b"\n"].concat();
-
                             // stderr
-                            let _ = stderr.write_all(msg).await;
+                            if log.level <= console_level {
+                                let _ = stderr.write_all(msg).await;
+                            }
 
                             // file
                             err_lines += 1;
@@ -149,10 +171,10 @@ impl LoggerWorker {
                             }
                             let _ = writer_err.write_all(msg).await;
                         } else {
-                            let msg = &[log.message.as_bytes(), b"\n"].concat();
-
                             // stdout
-                            let _ = stdout.write_all(msg).await;
+                            if log.level <= console_level {
+                                let _ = stdout.write_all(msg).await;
+                            }
 
                             // file
                             if config.write_info.load(Ordering::Relaxed) {

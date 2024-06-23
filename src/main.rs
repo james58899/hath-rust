@@ -60,7 +60,7 @@ const MAX_KEY_TIME_DRIFT: RangeInclusive<i64> = -300..=300;
 #[command(version = VERSION)]
 struct Args {
     /// Overrides the port set in the client's settings
-    #[arg(long)]
+    #[arg(short, long)]
     port: Option<u16>,
 
     /// Cache data location
@@ -106,6 +106,10 @@ struct Args {
     /// Force background cache scan, even if verify cache integrity is enabled
     #[arg(long, default_value_t = false)]
     force_background_scan: bool,
+
+    /// Quiet console output (specify multiple times to be quieter)
+    #[arg(short, action = clap::ArgAction::Count)]
+    quiet: u8,
 }
 
 type DownloadState = Mutex<HashMap<[u8; 20], (watch::Receiver<Option<Arc<TempPath>>>, Arc<watch::Sender<u64>>)>>;
@@ -159,7 +163,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     // Init logger
     let mut logger = Logger::init(args.log_dir).unwrap();
-    logger.config().write_info(!args.disable_logging).flush(args.flush_log);
+    logger.config().write_info(!args.disable_logging).flush(args.flush_log).console_level(args.quiet);
 
     info!("Hentai@Home {} (Rust {}) starting up", CLIENT_VERSION, VERSION);
 
