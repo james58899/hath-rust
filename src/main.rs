@@ -163,7 +163,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     // Init logger
     let mut logger = Logger::init(args.log_dir).unwrap();
-    logger.config().write_info(!args.disable_logging).flush(args.flush_log).console_level(args.quiet);
+    logger
+        .config()
+        .write_info(!args.disable_logging)
+        .flush(args.flush_log)
+        .console_level(args.quiet);
 
     info!("Hentai@Home {} (Rust {}) starting up", CLIENT_VERSION, VERSION);
 
