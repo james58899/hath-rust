@@ -42,11 +42,11 @@ unicode-segmentation = "1.11.0"
 [target.'cfg(any(target_arch = "x86", target_arch = "x86_64", target_arch = "aarch64"))'.dependencies]
 cpufeatures = "0.2"
 
-[target.'cfg(not(any(target_env = "msvc", target_env = "musl", target_os = "macos", target_os = "android")))'.dependencies]
+[target.'cfg(not(any(target_env = "msvc", target_os = "macos")))'.dependencies]
 tikv-jemallocator = { version = "0.5", features = ["background_threads", "unprefixed_malloc_on_supported_platforms"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
-tikv-jemallocator = { version = "0.5", features = ["unprefixed_malloc_on_supported_platforms"] } # jemalloc not support background threads on macos
+tikv-jemallocator = { version = "0.5" } # jemalloc not support background threads and unprefix on macos
 
 [target.'cfg(unix)'.dependencies]
 rustix = { version = "0.38.34", features = ["fs"] }
@@ -66,6 +66,8 @@ vergen-gix = { git = "https://github.com/rustyhorde/vergen", rev = "0c7c762" } #
 url = { git = "https://github.com/servo/rust-url", tag = "idna-v1.0.1" }
 form_urlencoded = { git = "https://github.com/servo/rust-url", tag = "idna-v1.0.1" }
 percent-encoding = { git = "https://github.com/servo/rust-url", tag = "idna-v1.0.1" }
+tikv-jemallocator = { git = "https://github.com/tikv/jemallocator", rev = "e9692ae" } # tikv-jemallocator not release
+tikv-jemalloc-sys = { git = "https://github.com/tikv/jemallocator", rev = "e9692ae" }
 
 [profile.release]
 opt-level = "s"
