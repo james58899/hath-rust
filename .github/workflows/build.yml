@@ -198,6 +198,7 @@ jobs:
         CC_armv7-linux-androideabi: "armv7a-linux-androideabi21-clang"
         # CC_i686-linux-android: "i686-linux-android21-clang"
       run: |
+        find "${ANDROID_NDK_ROOT}" -name "libunwind.a" -execdir touch libgcc.a \;
         export PATH=$PATH:${ANDROID_NDK_ROOT}/toolchains/llvm/prebuilt/linux-x86_64/bin
         cargo build --verbose --release --target=${{ matrix.target }}
     - uses: actions/upload-artifact@v4
