@@ -79,7 +79,11 @@ impl CacheManager {
             CacheManager::start_background_task(manager);
         } else {
             // Background cache scan
-            info!("Start background cache scan");
+            if verify_cache {
+                info!("Start background force cache check");
+            } else {
+                info!("Start background cache scan");
+            }
             spawn(async move {
                 if let Err(err) = manager.scan_cache(static_range, 4, verify_cache).await {
                     error!("Cache scan error: {}", err);
