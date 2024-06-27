@@ -72,9 +72,20 @@ impl CacheManager {
         let manager = new.clone();
         let verify_cache = init_settings.verify_cache();
         let static_range = init_settings.static_range();
-        if verify_cache && !force_background_scan {
-            // Force check cache
-            info!("Start force cache check");
+        let free = get_available_space(cache_dir.as_ref());
+        let low_disk = free.is_some_and(|x| x < SIZE_100MB);
+
+        if low_disk || (verify_cache && !force_background_scan) {
+            // Low space or force cache check
+            if low_disk {
+                warn!("Disk space is low than 100MiB: available={}MiB", free.unwrap() / 1024 / 1024);
+            }
+
+            if verify_cache {
+                info!("Start force cache check");
+            } else {
+                info!("Start foreground cache scan due to low disk space");
+            }
             new.scan_cache(static_range, 16, verify_cache).await?;
             CacheManager::start_background_task(manager);
         } else {
