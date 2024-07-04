@@ -20,7 +20,6 @@ use openssl::{
     ssl::{Ssl, SslAcceptor},
 };
 use tokio::{
-    io::AsyncWriteExt,
     net::{TcpListener, TcpSocket, TcpStream},
     sync::{watch, Notify},
     task::JoinHandle,
@@ -93,12 +92,6 @@ impl Server {
 
                     // Disable nodelay after handshake
                     let _ = ssl_stream.get_ref().set_nodelay(false);
-
-                    // First byte timeout
-                    if (timeout(Duration::from_secs(10), SslStream::peek(Pin::new(&mut ssl_stream), &mut [0])).await).is_err() {
-                        let _ = ssl_stream.shutdown().await;
-                        return;
-                    }
 
                     // Process request
                     let stream = TokioIo::new(ssl_stream); // Tokio to hyper trait

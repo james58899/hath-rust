@@ -61,7 +61,6 @@ openssl-src = { version = "300", features = ["weak-crypto"] }
 vergen-gix = "1.0.0"
 
 [patch.crates-io]
-tokio-openssl = { git = "https://github.com/tokio-rs/tokio-openssl", rev = "01d32fa" }
 vergen-gix = { git = "https://github.com/rustyhorde/vergen", rev = "0c7c762" } # vergen-gix not release
 url = { git = "https://github.com/servo/rust-url", tag = "idna-v1.0.1" }
 form_urlencoded = { git = "https://github.com/servo/rust-url", tag = "idna-v1.0.1" }
