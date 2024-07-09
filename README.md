@@ -37,17 +37,19 @@ The following conditions will be passed before release.
 * Run: Check binary runable
 * Test: Test on real environment
 
-|           Platform            | Build |  Run  | Test  |
-| ----------------------------- | :---: | :---: | :---: |
-| x86_64-unknown-linux-gnu      |  ✅   |  ✅  |  ✅   |
-| aarch64-unknown-linux-gnu     |  ✅   |  ❌  |  ❌   |
-| armv7-unknown-linux-gnueabihf |  ✅   |  ❌  |  ❌   |
-| x86_64-pc-windows-msvc        |  ✅   |  ✅  |  ❌   |
-| i686-pc-windows-msvc          |  ✅   |  ✅  |  ❌   |
-| x86_64-apple-darwin           |  ✅   |  ❌  |  ❌   |
-| aarch64-apple-darwin          |  ✅   |  ✅  |  ❌   |
-| *-musl (Experimental)         |  ❌   |  ❌  |  ❌   |
-| *-android (Experimental)      |  ❌   |  ❌  |  ❌   |
+|            Platform            | Build |  Run  | Test  |
+| ------------------------------ | :---: | :---: | :---: |
+| x86_64-unknown-linux-gnu       |  ✅   |  ✅  |  ✅   |
+| x86_64-unknown-linux-musl      |  ✅   |  ✅  |  ✅   |
+| aarch64-unknown-linux-gnu      |  ✅   |  ❌  |  ❌   |
+| aarch64-unknown-linux-musl     |  ✅   |  ❌  |  ❌   |
+| armv7-unknown-linux-gnueabihf  |  ✅   |  ❌  |  ❌   |
+| armv7-unknown-linux-musleabihf |  ✅   |  ❌  |  ❌   |
+| x86_64-pc-windows-msvc         |  ✅   |  ✅  |  ❌   |
+| i686-pc-windows-msvc           |  ✅   |  ✅  |  ❌   |
+| x86_64-apple-darwin            |  ✅   |  ❌  |  ❌   |
+| aarch64-apple-darwin           |  ✅   |  ✅  |  ❌   |
+| *-android (Experimental)       |  ❌   |  ❌  |  ❌   |
 
 See https://doc.rust-lang.org/stable/rustc/platform-support.html
 
