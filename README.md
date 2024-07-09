@@ -31,27 +31,42 @@ Features that are included in the official and are working.
 * Bandwidth limit
 
 ## Platform support
-The following conditions will be passed before release.
+Please refer to the rust website for the platform name: https://doc.rust-lang.org/stable/rustc/platform-support.html
 
-* Build: CI build success
-* Run: Check binary runable
-* Test: Test on real environment
+### Tier 1
+Main supported platforms.  
+Tested in real environments before release.
 
-|            Platform            | Build |  Run  | Test  |
-| ------------------------------ | :---: | :---: | :---: |
-| x86_64-unknown-linux-gnu       |  ✅   |  ✅  |  ✅   |
-| x86_64-unknown-linux-musl      |  ✅   |  ✅  |  ✅   |
-| aarch64-unknown-linux-gnu      |  ✅   |  ❌  |  ❌   |
-| aarch64-unknown-linux-musl     |  ✅   |  ❌  |  ❌   |
-| armv7-unknown-linux-gnueabihf  |  ✅   |  ❌  |  ❌   |
-| armv7-unknown-linux-musleabihf |  ✅   |  ❌  |  ❌   |
-| x86_64-pc-windows-msvc         |  ✅   |  ✅  |  ❌   |
-| i686-pc-windows-msvc           |  ✅   |  ✅  |  ❌   |
-| x86_64-apple-darwin            |  ✅   |  ❌  |  ❌   |
-| aarch64-apple-darwin           |  ✅   |  ✅  |  ❌   |
-| *-android (Experimental)       |  ❌   |  ❌  |  ❌   |
+|          Platform         |
+| ------------------------- |
+| x86_64-unknown-linux-gnu  |
+| x86_64-unknown-linux-musl |
 
-See https://doc.rust-lang.org/stable/rustc/platform-support.html
+### Tier 2
+Secondary supported platforms.  
+Due to the lack of hardware or real environment, it was not tested before release, relying on users to report bugs.
+
+|            Platform            |
+| ------------------------------ |
+| aarch64-unknown-linux-gnu      |
+| aarch64-unknown-linux-musl     |
+| armv7-unknown-linux-gnueabihf  |
+| armv7-unknown-linux-musleabihf |
+| x86_64-pc-windows-msvc         |
+| i686-pc-windows-msvc           |
+| x86_64-apple-darwin            |
+| aarch64-apple-darwin           |
+
+### Tier 3
+Experimental platform.  
+Not guaranteed to work, may break at any time.
+
+|         Platform        | State |            Notes            |
+| ----------------------- | :---: | --------------------------- |
+| aarch64-linux-android   |  ✅   |                             |
+| armv7-linux-androideabi |  ✅   |                             |
+| i686-linux-android      |  ❌   | Broken due to OpenSSL issue |
+| x86_64-linux-android    |  ✅   |                             |
 
 
 [^h2]: Multiplexing is useless for H@H, and a large number of connections will take up more system resources.
