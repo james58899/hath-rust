@@ -2,7 +2,7 @@ name: Build
 
 on:
   push:
-    branches: [ "main", "dev" ]
+    branches: [ "main", "dev", "rustls" ]
   pull_request:
     branches: [ "main" ]
   workflow_call:
