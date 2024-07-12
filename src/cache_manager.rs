@@ -18,9 +18,9 @@ use futures::{stream, StreamExt, TryFutureExt};
 use hex::FromHex;
 use log::{debug, error, info, warn};
 use mime::Mime;
-use openssl::sha::Sha1;
 use parking_lot::{Mutex, RwLock};
 use rand::{rngs::SmallRng, Rng, SeedableRng};
+use sha1::{Digest, Sha1};
 use tempfile::TempPath;
 use tokio::{
     fs::{copy, create_dir_all, metadata, read_dir, remove_dir_all, remove_file, rename, DirEntry, File},
@@ -402,7 +402,7 @@ impl CacheManager {
                                 }
                             }
                         }
-                        let actual_hash = hasher.finish();
+                        let actual_hash: [u8; 20] = hasher.finalize().into();
                         if actual_hash != info.hash {
                             warn!(
                                 "Delete corrupt cache file: path={:?}, hash={:x?}, actual={:x?}",

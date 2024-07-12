@@ -8,10 +8,10 @@ use std::{
 use futures::StreamExt;
 use hex::FromHex;
 use log::{debug, error, info, warn};
-use openssl::sha::Sha1;
 use parking_lot::Mutex;
 use regex_lite::Regex;
 use reqwest::{Proxy, Url};
+use sha1::{Digest, Sha1};
 use tokio::{
     fs::{self, create_dir_all},
     io::{AsyncReadExt, AsyncWriteExt},
@@ -308,7 +308,7 @@ async fn download<P: AsRef<Path>>(reqwest: reqwest::Client, url: Url, path: P, h
     }
 
     if let Some(expected) = hash {
-        let hash = hasher.finish();
+        let hash = hasher.finalize().into();
         if hash != expected {
             return Err(Box::new(Error::HashMismatch { expected, actual: hash }));
         }
@@ -350,7 +350,8 @@ impl GalleryFile {
                     hasher.update(&buf[0..n]);
                 }
             }
-            if hasher.finish() == self.expected_sha1_hash.unwrap() {
+            let hash: [u8; 20] = hasher.finalize().into();
+            if hash == self.expected_sha1_hash.unwrap() {
                 return true;
             }
         }

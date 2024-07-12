@@ -14,11 +14,6 @@ use std::{
 use chrono::{TimeDelta, TimeZone, Utc};
 use futures::{executor::block_on, TryFutureExt};
 use log::{debug, error, info, warn};
-use openssl::{
-    asn1::Asn1Time,
-    pkcs12::{ParsedPkcs12_2, Pkcs12},
-    provider::Provider,
-};
 use parking_lot::{RwLock, RwLockUpgradableReadGuard};
 use rand::{prelude::SliceRandom, rngs::SmallRng, SeedableRng};
 use reqwest::{IntoUrl, Url};
@@ -26,6 +21,7 @@ use reqwest::{IntoUrl, Url};
 use crate::{
     error::Error,
     gallery_downloader::GalleryMeta,
+    server::ssl::ParsedCert,
     util::{create_http_client, string_to_hash},
 };
 
@@ -209,31 +205,15 @@ impl RPCClient {
         }
     }
 
-    pub async fn get_cert(&self) -> Option<ParsedPkcs12_2> {
-        let _provider = Provider::try_load(None, "legacy", true).unwrap();
-        let cert = self
-            .reqwest
+    pub async fn get_cert(&self) -> Option<ParsedCert> {
+        self.reqwest
             .get(self.build_url("get_cert", "", None))
             .send()
             .and_then(|res| async { res.error_for_status() })
             .and_then(|res| res.bytes())
             .await
             .ok()
-            .and_then(|data| Pkcs12::from_der(&data[..]).ok())
-            .and_then(|cert| cert.parse2(self.key.as_str()).ok());
-
-        if let Some(cert) = &cert {
-            let timestamp = (self.get_timestemp() as isize) // Maybe is 32 bit system
-                .checked_add(86400)
-                .map(|t| Asn1Time::from_unix(t.try_into().unwrap()).unwrap());
-            let tomorrow = timestamp.unwrap_or_else(|| Asn1Time::days_from_now(1).unwrap());
-            if cert.cert.is_some() && cert.pkey.is_some() && cert.cert.as_ref().unwrap().not_after() < tomorrow {
-                error!("The retrieved certificate is expired, or the system time is off by more than a day. Correct the system time and try again.");
-                return None;
-            }
-        }
-
-        cert
+            .and_then(|data| ParsedCert::from_p12(&data, &self.key))
     }
 
     pub async fn get_purgelist(&self, delta_time: u64) -> Option<Vec<String>> {

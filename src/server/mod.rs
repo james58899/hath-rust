@@ -1,7 +1,6 @@
 use std::{
     net::SocketAddr,
     ops::Deref,
-    pin::Pin,
     sync::{
         atomic::{AtomicBool, Ordering},
         Arc,
@@ -15,20 +14,18 @@ use futures::pin_mut;
 use hyper::server::conn::http1;
 use hyper_util::rt::{TokioIo, TokioTimer};
 use log::info;
-use openssl::{
-    pkcs12::ParsedPkcs12_2,
-    ssl::{Ssl, SslAcceptor},
-};
+use rustls::ServerConfig;
+use ssl::ParsedCert;
 use tokio::{
     net::{TcpListener, TcpSocket, TcpStream},
     sync::{watch, Notify},
     task::JoinHandle,
     time::timeout,
 };
-use tokio_openssl::SslStream;
+use tokio_rustls::TlsAcceptor;
 use tower::{Layer, Service};
 
-use crate::{middleware, route, server::ssl::create_ssl_acceptor, AppState};
+use crate::{middleware, route, server::ssl::create_ssl_config, AppState};
 
 pub mod ssl;
 
@@ -40,12 +37,12 @@ pub struct Server {
 pub struct ServerHandle {
     shutdown: AtomicBool,
     shutdown_notify: Notify,
-    ssl_acceptor: ArcSwap<SslAcceptor>,
+    ssl_config: ArcSwap<ServerConfig>,
 }
 
 impl Server {
-    pub fn new(port: u16, cert: ParsedPkcs12_2, data: AppState) -> Self {
-        let handle = Arc::new(ServerHandle::new(create_ssl_acceptor(cert)));
+    pub fn new(port: u16, cert: ParsedCert, data: AppState) -> Self {
+        let handle = Arc::new(ServerHandle::new(create_ssl_config(cert)));
         let mut listener = bind(SocketAddr::from(([0, 0, 0, 0], port)));
 
         let mut http = http1::Builder::new();
@@ -84,14 +81,14 @@ impl Server {
                 let mut shutdown_rx = shutdown_tx.subscribe();
                 tokio::spawn(async move {
                     // TLS handshake
-                    let mut ssl_stream = SslStream::new(Ssl::new(handle.ssl_acceptor.load().context()).unwrap(), stream).unwrap();
-                    match timeout(Duration::from_secs(10), SslStream::accept(Pin::new(&mut ssl_stream))).await {
-                        Ok(Ok(_)) => (),
+                    let acceptor = TlsAcceptor::from(handle.ssl_config.load().clone());
+                    let ssl_stream = match timeout(Duration::from_secs(10), acceptor.accept(stream)).await {
+                        Ok(Ok(s)) => s,
                         _ => return, // Handshake timeout or error
-                    }
+                    };
 
                     // Disable nodelay after handshake
-                    let _ = ssl_stream.get_ref().set_nodelay(false);
+                    let _ = ssl_stream.get_ref().0.set_nodelay(false);
 
                     // Process request
                     let stream = TokioIo::new(ssl_stream); // Tokio to hyper trait
@@ -132,17 +129,17 @@ impl Server {
 }
 
 impl ServerHandle {
-    fn new(ssl: SslAcceptor) -> Self {
+    fn new(config: ServerConfig) -> Self {
         Self {
             shutdown: AtomicBool::new(false),
             shutdown_notify: Notify::new(),
-            ssl_acceptor: ArcSwap::new(Arc::new(ssl)),
+            ssl_config: ArcSwap::new(Arc::new(config)),
         }
     }
 
-    pub fn update_cert(&self, cert: ParsedPkcs12_2) {
-        let acceptor = create_ssl_acceptor(cert);
-        self.ssl_acceptor.store(Arc::new(acceptor));
+    pub fn update_cert(&self, cert: ParsedCert) {
+        let config = create_ssl_config(cert);
+        self.ssl_config.store(Arc::new(config));
     }
 
     fn shutdown(&self) {

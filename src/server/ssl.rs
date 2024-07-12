@@ -1,92 +1,117 @@
-use std::{sync::Arc, time::Duration};
-
-use arc_swap::{access::Access, ArcSwapOption};
-use chrono::{DateTime, NaiveDateTime, Utc};
-use log::debug;
-use openssl::{
-    base64,
-    hash::MessageDigest,
-    ocsp::{OcspCertId, OcspCertStatus, OcspRequest, OcspResponse},
-    pkcs12::ParsedPkcs12_2,
-    ssl::{SslAcceptor, SslMethod, SslMode, SslOptions, SslSessionCacheMode},
-    x509::X509VerifyResult,
+use std::{
+    error::Error,
+    sync::Arc,
+    time::{Duration, UNIX_EPOCH},
 };
+
+use arc_swap::ArcSwap;
+use base64::{prelude::BASE64_STANDARD, Engine};
+use chrono::{DateTime, Utc};
+use log::{debug, warn};
+use p12::PFX;
 use reqwest::Url;
+use rustls::{
+    crypto::ring::Ticketer,
+    pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer},
+    server::{ClientHello, NoServerSessionStorage, ResolvesServerCert},
+    sign::CertifiedKey,
+    ServerConfig,
+};
+use sha1::Sha1;
 use tokio::time::{sleep_until, Instant};
+use x509_cert::{
+    der::{oid::db::rfc5912::ID_AD_OCSP, Decode, Encode},
+    ext::pkix::{name::GeneralName, AccessDescription, AuthorityInfoAccessSyntax},
+    Certificate,
+};
+use x509_ocsp::{builder::OcspRequestBuilder, BasicOcspResponse, CertStatus, OcspResponse, OcspResponseStatus, Request};
 
-use crate::util::aes_support;
+use crate::util::{aes_support, ssl_provider};
 
-pub fn create_ssl_acceptor(cert: ParsedPkcs12_2) -> SslAcceptor {
+pub struct ParsedCert {
+    certs: Vec<CertificateDer<'static>>,
+    key: PrivateKeyDer<'static>,
+}
+
+#[derive(Debug)]
+struct CertStore {
+    cert: ArcSwap<CertifiedKey>,
+}
+
+impl CertStore {
+    fn new(cert: &ParsedCert) -> Result<Self, Box<dyn Error>> {
+        let key = ssl_provider().key_provider.load_private_key(cert.key.clone_key())?;
+        let cert = CertifiedKey::new(cert.certs.clone(), key);
+
+        Ok(CertStore {
+            cert: ArcSwap::new(cert.into()),
+        })
+    }
+
+    fn update_ocsp(&self, ocsp: Option<Vec<u8>>) {
+        let old = self.cert.load();
+        if let Some(ocsp) = ocsp {
+            let mut new = CertifiedKey::new(old.cert.clone(), old.key.clone());
+            new.ocsp = Some(ocsp);
+            self.cert.store(Arc::new(new));
+        } else {
+            let new = CertifiedKey::new(old.cert.clone(), old.key.clone());
+            self.cert.store(Arc::new(new));
+        }
+    }
+}
+
+impl ResolvesServerCert for CertStore {
+    fn resolve(&self, _client_hello: ClientHello<'_>) -> Option<Arc<CertifiedKey>> {
+        Some(self.cert.load().clone())
+    }
+}
+
+impl ParsedCert {
+    pub fn from_p12(p12: &[u8], password: &str) -> Option<ParsedCert> {
+        let pfx = PFX::parse(p12).ok()?;
+        let key = PrivatePkcs8KeyDer::from(pfx.key_bags(password).ok()?.pop()?).into();
+        let certs: Vec<CertificateDer> = pfx.cert_x509_bags(password).ok()?.into_iter().map(CertificateDer::from).collect();
+
+        Some(ParsedCert { certs, key })
+    }
+
+    pub fn cert(&self) -> Option<&CertificateDer> {
+        self.certs.first()
+    }
+
+    pub fn issue(&self) -> Option<&CertificateDer> {
+        self.certs.get(1)
+    }
+}
+
+pub fn create_ssl_config(cert: ParsedCert) -> ServerConfig {
     // TODO error handle
-    let mut builder = SslAcceptor::mozilla_intermediate(SslMethod::tls_server()).unwrap();
-    builder.clear_options(SslOptions::NO_TLSV1_3);
-    builder.set_options(SslOptions::NO_RENEGOTIATION | SslOptions::ENABLE_MIDDLEBOX_COMPAT);
-    builder.set_mode(SslMode::RELEASE_BUFFERS);
-    builder.set_session_cache_mode(SslSessionCacheMode::OFF); // Disable session ID resumption
-    let _ = builder.set_num_tickets(1);
+    let cert_store = Arc::new(CertStore::new(&cert).unwrap());
+    let weak_cert_store = Arc::downgrade(&cert_store); // For OCSP worker
+    let mut config = ServerConfig::builder_with_provider(ssl_provider().into())
+        .with_safe_default_protocol_versions()
+        .unwrap()
+        .with_no_client_auth()
+        .with_cert_resolver(cert_store);
 
-    // From https://wiki.mozilla.org/Security/Server_Side_TLS#Old_backward_compatibility
-    if !aes_support() {
-        // Not have AES hardware acceleration, prefer ChaCha20.
-        builder
-            .set_cipher_list(
-                "@SECLEVEL=0:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:\
-                ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:\
-                ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:\
-                DHE-RSA-CHACHA20-POLY1305:DHE-RSA-AES128-GCM-SHA256:DHE-RSA-AES256-GCM-SHA384:\
-                ECDHE-ECDSA-AES128-SHA256:ECDHE-RSA-AES128-SHA256:\
-                ECDHE-ECDSA-AES128-SHA:ECDHE-RSA-AES128-SHA:\
-                ECDHE-ECDSA-AES256-SHA384:ECDHE-RSA-AES256-SHA384:\
-                ECDHE-ECDSA-AES256-SHA:ECDHE-RSA-AES256-SHA:\
-                DHE-RSA-AES128-SHA256:DHE-RSA-AES256-SHA256:\
-                AES128-GCM-SHA256:AES256-GCM-SHA384:AES128-SHA256:AES256-SHA256:AES128-SHA:AES256-SHA:\
-                DES-CBC3-SHA",
-            )
-            .unwrap();
-        builder
-            .set_ciphersuites("TLS_CHACHA20_POLY1305_SHA256:TLS_AES_128_GCM_SHA256:TLS_AES_256_GCM_SHA384")
-            .unwrap();
-    } else {
-        // Prioritize ChaCha ciphers when preferred by clients.
-        builder.set_options(SslOptions::PRIORITIZE_CHACHA);
+    // Prefer ChaCha20 on non-AES hardware.
+    config.ignore_client_order = !aes_support();
+    // Only support ticket resumption.
+    config.session_storage = Arc::new(NoServerSessionStorage {});
+    config.ticketer = Ticketer::new().unwrap();
+    config.send_tls13_tickets = 1;
 
-        builder
-            .set_cipher_list(
-                "@SECLEVEL=0:ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:\
-                ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:\
-                ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:\
-                DHE-RSA-AES128-GCM-SHA256:DHE-RSA-AES256-GCM-SHA384:DHE-RSA-CHACHA20-POLY1305:\
-                ECDHE-ECDSA-AES128-SHA256:ECDHE-RSA-AES128-SHA256:\
-                ECDHE-ECDSA-AES128-SHA:ECDHE-RSA-AES128-SHA:\
-                ECDHE-ECDSA-AES256-SHA384:ECDHE-RSA-AES256-SHA384:\
-                ECDHE-ECDSA-AES256-SHA:ECDHE-RSA-AES256-SHA:\
-                DHE-RSA-AES128-SHA256:DHE-RSA-AES256-SHA256:\
-                AES128-GCM-SHA256:AES256-GCM-SHA384:AES128-SHA256:AES256-SHA256:AES128-SHA:AES256-SHA:\
-                DES-CBC3-SHA",
-            )
-            .unwrap();
-        builder
-            .set_ciphersuites("TLS_AES_128_GCM_SHA256:TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256")
-            .unwrap();
-    }
-    builder.set_private_key(cert.pkey.as_ref().unwrap()).unwrap();
-    builder.set_certificate(cert.cert.as_ref().unwrap()).unwrap();
-    if let Some(i) = &cert.ca {
-        i.iter().for_each(|j| builder.add_extra_chain_cert(j.to_owned()).unwrap());
-    }
-
-    // OCSP stapling
-    let ocsp_store = Arc::new(ArcSwapOption::empty());
-    let weak_ocsp_store = Arc::downgrade(&ocsp_store);
+    // OCSP worker
     tokio::spawn(async move {
         debug!("Start new OCSP stapling worker");
         loop {
             let mut next_run = Instant::now() + Duration::from_secs(3600);
-            if let Some(ocsp_store) = weak_ocsp_store.upgrade() {
-                ocsp_store.store(None);
+            if let Some(cert_store) = weak_cert_store.upgrade() {
+                cert_store.update_ocsp(None); // Remove old OCSP
                 if let Some((res, date)) = fetch_ocsp(&cert).await {
                     debug!("Fetch OCSP response success");
-                    ocsp_store.store(Some(Arc::new(res)));
+                    cert_store.update_ocsp(Some(res));
                     next_run = Instant::now() + date.signed_duration_since(Utc::now()).to_std().unwrap_or_default();
                 }
             } else {
@@ -97,41 +122,51 @@ pub fn create_ssl_acceptor(cert: ParsedPkcs12_2) -> SslAcceptor {
             sleep_until(next_run).await;
         }
     });
-    let _ = builder.set_status_callback(move |ssl| {
-        if let Some(res) = ocsp_store.load().as_ref() {
-            Ok(ssl.set_ocsp_status(res).is_ok())
-        } else {
-            Ok(false)
-        }
-    });
 
-    builder.build()
+    config
 }
 
-async fn fetch_ocsp(full_chain: &ParsedPkcs12_2) -> Option<(Vec<u8>, DateTime<Utc>)> {
-    let cert = full_chain.cert.as_ref()?;
-    let chain = full_chain.ca.as_ref()?;
-    let issuer = chain.iter().find(|ca| ca.issued(cert) == X509VerifyResult::OK)?;
-    let mut url = cert.ocsp_responders().ok()?.get(0).and_then(|url| Url::parse(url).ok())?;
-    let mut request = OcspRequest::new().unwrap();
+async fn fetch_ocsp(full_chain: &ParsedCert) -> Option<(Vec<u8>, DateTime<Utc>)> {
+    let cert = Certificate::from_der(full_chain.cert()?).ok()?;
+    let issuer = Certificate::from_der(full_chain.issue()?).ok()?;
+
+    if cert.tbs_certificate.issuer != issuer.tbs_certificate.subject {
+        warn!("OCSP stapling: issuer and subject mismatch");
+        return None;
+    }
+
+    // Extract OCSP URL
+    let aia: Vec<AccessDescription> = cert.tbs_certificate.get::<AuthorityInfoAccessSyntax>().ok().flatten()?.1 .0;
+    let mut url = match aia.iter().find(|aia| aia.access_method == ID_AD_OCSP)?.access_location.clone() {
+        GeneralName::UniformResourceIdentifier(url) => Url::parse(url.as_str()).ok()?,
+        _ => return None,
+    };
+
+    // Create OCSP request
     // Let's Encrypt follow rfc5019 2.1.1: Clients MUST use SHA1 as the hashing algorithm for the CertID.issuerNameHash and the CertID.issuerKeyHash values.
     // ref: https://github.com/letsencrypt/boulder/issues/5523#issuecomment-877301162
-    request
-        .add_id(OcspCertId::from_cert(MessageDigest::sha1(), cert, issuer).ok()?)
+    let ocsp_request = OcspRequestBuilder::default()
+        .with_request(Request::from_cert::<Sha1>(&issuer, &cert).ok()?)
+        .build()
+        .to_der()
         .ok()?;
-    let ocsp_encoded = request.to_der().map(|data| base64::encode_block(&data)).ok()?;
-    url.path_segments_mut().unwrap().push(&ocsp_encoded);
+
+    url.path_segments_mut().unwrap().push(&BASE64_STANDARD.encode(ocsp_request));
 
     // Check response
-    let response = reqwest::get(url).await.ok()?.bytes().await.ok()?;
-    let ocsp = OcspResponse::from_der(&response).ok()?.basic().ok()?;
-    let oid = OcspCertId::from_cert(MessageDigest::sha1(), cert, issuer).unwrap();
-    let ocsp_status = ocsp.find_status(&oid)?;
-    if ocsp_status.status == OcspCertStatus::GOOD {
-        let update = NaiveDateTime::parse_from_str(&ocsp_status.next_update.to_string(), "%b %d %H:%M:%S %Y %Z")
+    let res = reqwest::get(url).await.ok()?.bytes().await.ok()?;
+    let ocsp = OcspResponse::from_der(&res).ok()?;
+    if ocsp.response_status == OcspResponseStatus::Successful && ocsp.response_bytes.is_some() {
+        let response = BasicOcspResponse::from_der(ocsp.response_bytes.unwrap().response.as_bytes())
             .ok()?
-            .and_utc();
-        return Some((response.to_vec(), update));
+            .tbs_response_data
+            .responses
+            .into_iter()
+            .next()?;
+        if response.cert_status == CertStatus::good() {
+            let update = DateTime::from(UNIX_EPOCH + response.next_update?.0.to_unix_duration());
+            return Some((res.to_vec(), update));
+        }
     }
 
     None
