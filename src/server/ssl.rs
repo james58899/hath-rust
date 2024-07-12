@@ -14,6 +14,8 @@ use openssl::{
 use reqwest::Url;
 use tokio::time::{sleep_until, Instant};
 
+use crate::util::aes_support;
+
 pub fn create_ssl_acceptor(cert: ParsedPkcs12_2) -> SslAcceptor {
     // TODO error handle
     let mut builder = SslAcceptor::mozilla_intermediate(SslMethod::tls_server()).unwrap();
@@ -104,17 +106,6 @@ pub fn create_ssl_acceptor(cert: ParsedPkcs12_2) -> SslAcceptor {
     });
 
     builder.build()
-}
-
-#[cfg(any(target_arch = "x86", target_arch = "x86_64", target_arch = "aarch64"))]
-fn aes_support() -> bool {
-    cpufeatures::new!(cpuid_aes, "aes");
-    cpuid_aes::get()
-}
-
-#[cfg(not(any(target_arch = "x86", target_arch = "x86_64", target_arch = "aarch64")))]
-fn aes_support() -> bool {
-    false // Unable to check AES acceleration support, assumed negative.
 }
 
 async fn fetch_ocsp(full_chain: &ParsedPkcs12_2) -> Option<(Vec<u8>, DateTime<Utc>)> {
