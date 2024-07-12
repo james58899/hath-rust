@@ -13,7 +13,7 @@ use axum::{
 use bytes::BytesMut;
 use futures::StreamExt;
 use log::error;
-use openssl::sha::Sha1;
+use sha1::{Digest, Sha1};
 use tokio::{
     fs::{File, OpenOptions},
     io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt},
@@ -178,7 +178,7 @@ pub(super) async fn hath(
                             error!("Proxy temp file flush fail: {}", err);
                             break 'retry;
                         }
-                        let hash = hasher.finish();
+                        let hash: [u8; 20] = hasher.finalize().into();
                         tx2.send_replace(progress);
                         tx2.closed().await; // Wait all request done
                         data.download_state.lock().remove(&info2.hash());

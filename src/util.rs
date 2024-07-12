@@ -2,7 +2,6 @@ use std::time::Duration;
 
 use const_format::concatcp;
 use futures::future::try_join_all;
-use openssl::sha::Sha1;
 use reqwest::Proxy;
 use rustls::{
     compress::CompressionCache,
@@ -12,14 +11,13 @@ use rustls::{
     },
     ClientConfig, RootCertStore,
 };
+use sha1::{Digest, Sha1};
 use tokio::fs::create_dir_all;
 
 use crate::CLIENT_VERSION;
 
 pub fn string_to_hash(str: String) -> String {
-    let mut hasher = Sha1::new();
-    hasher.update(str.as_bytes());
-    hex::encode(hasher.finish())
+    hex::encode(Sha1::digest(str.as_bytes()))
 }
 
 pub fn create_http_client(timeout: Duration, proxy: Option<Proxy>) -> reqwest::Client {

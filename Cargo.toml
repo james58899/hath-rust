@@ -8,6 +8,7 @@ build = "build.rs"
 arc-swap = "1.7"
 async-stream = "0.3"
 axum = { version = "0.7", default-features = false, features = ["http1", "matched-path"] }
+base64 = "0.22.1"
 bytes = "1.6"
 chrono = { version = "0.4", default-features = false, features = [ "now" ] }
 clap = { version = "4.5", features = ["derive", "wrap_help"] }
@@ -23,7 +24,7 @@ hyper-util = { version = "0.1", features = ["tokio"] }
 inquire = "0.7"
 log = { version = "0.4", features = ["std"] }
 mime = "0.3"
-openssl = { version = "*", features = ["vendored"] }
+p12 = "0.6.3"
 parking_lot = { version = "0.12", features = ["hardware-lock-elision", "deadlock_detection"] }
 pin-project-lite = "0.2"
 rand = { version = "0.8", default-features = false, features = ["alloc", "getrandom", "small_rng"] }
@@ -31,14 +32,17 @@ regex-lite = "0.1.6"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "stream", "socks"] }
 rustls = { version = "0.23.11", default-features = false, features = ["brotli", "ring", "std", "tls12"] }
 scopeguard = "1.2"
+sha1 = { version = "0.10.6", default-features = false, features = ["oid"] }
 tempfile = "3.10"
 tokio = { version = "1", features = ["full", "parking_lot"] }
-tokio-openssl = "0.6"
+tokio-rustls = { version = "0.26.0", default-features = false, features = ["tls12"] }
 tokio-stream = { version = "0.1", default-features = false, features = ["fs"] }
 tower = { version = "0.4", features = ["util", "timeout"] }
 tower-http = { version = "0.5", features = ["fs"] }
 unicode-segmentation = "1.11.0"
 webpki-roots = "0.26.3"
+x509-cert = { version = "0.2.5", default-features = false }
+x509-ocsp = { version = "0.2.1", features = ["builder"] }
 
 # cpufeatures not support all platforms
 [target.'cfg(any(target_arch = "x86", target_arch = "x86_64", target_arch = "aarch64"))'.dependencies]
@@ -59,7 +63,6 @@ windows = { version = "0.57", features = ["Win32_Foundation", "Win32_System_Cons
 tao = "0.28"
 
 [build-dependencies]
-openssl-src = { version = "300", features = ["weak-crypto"] }
 vergen-gix = "1.0.0"
 
 [patch.crates-io]
