@@ -534,7 +534,7 @@ impl CacheManager {
                 .await;
             files.sort_unstable_by(|(_, a, _), (_, b, _)| a.cmp(b));
 
-            let mut new_oldest = cut_off;
+            let mut new_oldest = files.last().map_or_else(FileTime::now, |(_, mtime, _)| *mtime);
             for file in files {
                 let (entry, mtime, metadata) = file;
 
