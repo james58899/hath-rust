@@ -159,31 +159,24 @@ impl CacheManager {
 
         self.mark_recently_accessed(info, false).await;
 
-        let total_size = self.total_size.clone();
-        let _ = spawn_blocking(move || match file_real_size(&path) {
-            Ok(size) => {
-                total_size.fetch_add(size, Relaxed);
-            }
-            Err(err) => error!("Read cache file size error: path={:?}, err={}", &path, err),
-        })
-        .await;
+        if let Some(size) = async_filesize(&path).await {
+            self.total_size.fetch_add(size, Relaxed);
+        }
     }
 
     pub async fn remove_cache(&self, info: &CacheFileInfo) {
         let path = info.to_path(&self.cache_dir);
-        if metadata(&path).await.is_ok() {
+        if let Ok(metadata) = metadata(&path).await {
             debug!("Delete cache: {:?}", path);
             let total_size = self.total_size.clone();
-            let _ = spawn_blocking(move || match file_real_size(&path) {
-                Ok(size) => match std::fs::remove_file(&path) {
+            if let Some(size) = async_filesize_fast(&path, &metadata).await {
+                match std::fs::remove_file(&path) {
                     Ok(_) => {
                         total_size.fetch_sub(size, Relaxed);
                     }
                     Err(err) => error!("Delete cache file error: path={:?}, err={}", &path, err),
-                },
-                Err(err) => error!("Read cache file size error: path={:?}, err={}", &path, err),
-            })
-            .await;
+                }
+            }
         }
     }
 
@@ -350,7 +343,7 @@ impl CacheManager {
                         let inode = get_inode(&metadata).unwrap_or(btree.len() as u64); // sort by inode or sequential
                         btree.insert(inode, path);
                     } else {
-                        if let Ok(size) = file_real_size_fast(&path, &metadata) {
+                        if let Some(size) = async_filesize_fast(&path, &metadata).await {
                             self.total_size.fetch_add(size, Relaxed);
                         }
 
@@ -416,7 +409,7 @@ impl CacheManager {
 
                         // File is correct, calculate size
                         if let Ok(metadata) = file.metadata().await {
-                            if let Ok(size) = file_real_size_fast(&path, &metadata) {
+                            if let Some(size) = async_filesize_fast(&path, &metadata).await {
                                 self.total_size.fetch_add(size, Relaxed);
                             }
 
@@ -469,7 +462,7 @@ impl CacheManager {
 
     async fn check_cache_usage(&self) {
         let total_size = self.total_size.load(Relaxed);
-        let size_limit = self.size_limit.load(Relaxed).saturating_sub(SIZE_100MB); // Reserve 100MiB in size limit
+        let size_limit = self.size_limit.load(Relaxed);
         let disk_free = get_available_space(&self.cache_dir);
         let mut need_free = total_size.saturating_sub(size_limit);
 
@@ -488,6 +481,7 @@ impl CacheManager {
 
         debug!("Start cache cleaner: need_free={}bytes", need_free);
         while need_free > 0 {
+            // Select the oldest directory
             let target_dir;
             let cut_off;
             {
@@ -501,12 +495,14 @@ impl CacheManager {
                 cut_off = dirs.get(1).map(|(_, t)| **t).unwrap_or_else(FileTime::now);
             }
 
+            // List files
             let files = read_dir(&target_dir).map_ok(ReadDirStream::new).await;
             if let Err(err) = files {
                 error!("Read cache dir {:?} error: {}", target_dir, err);
                 break;
             }
 
+            // Sort by mtime
             let mut files: Vec<(DirEntry, FileTime, Metadata)> = files
                 .unwrap()
                 .filter_map(|entry| async move {
@@ -534,10 +530,9 @@ impl CacheManager {
                 .await;
             files.sort_unstable_by(|(_, a, _), (_, b, _)| a.cmp(b));
 
+            // Delete cache until need_free is 0 or mtime is new than cut_off
             let mut new_oldest = files.last().map_or_else(FileTime::now, |(_, mtime, _)| *mtime);
-            for file in files {
-                let (entry, mtime, metadata) = file;
-
+            for (entry, mtime, metadata) in files {
                 if mtime > cut_off || need_free == 0 {
                     new_oldest = mtime;
                     break;
@@ -550,20 +545,44 @@ impl CacheManager {
                     continue;
                 }
 
-                let size = match file_real_size_fast(&path, &metadata) {
-                    Ok(size) => size,
-                    Err(err) => {
-                        error!("Read cache file {:?} size error: {}", path, err);
-                        continue;
-                    }
-                };
-
-                self.remove_cache(&info.unwrap()).await;
-
-                need_free = need_free.saturating_sub(size);
+                if let Some(size) = async_filesize_fast(&path, &metadata).await {
+                    self.remove_cache(&info.unwrap()).await;
+                    need_free = need_free.saturating_sub(size);
+                }
             }
 
             self.cache_date.lock().insert(target_dir, new_oldest);
+        }
+    }
+}
+
+async fn async_filesize(path: &Path) -> Option<u64> {
+    let path2 = path.to_path_buf();
+    match spawn_blocking(move || file_real_size(path2)).await {
+        Ok(Ok(size)) => Some(size),
+        Ok(Err(e)) => {
+            error!("Read cache file {:?} size error: {}", path, e);
+            None
+        }
+        Err(e) => {
+            error!("Read cache file {:?} size error: {}", path, e);
+            None
+        }
+    }
+}
+
+async fn async_filesize_fast(path: &Path, metadata: &Metadata) -> Option<u64> {
+    let path2 = path.to_path_buf();
+    let metadata = metadata.clone();
+    match spawn_blocking(move || file_real_size_fast(path2, &metadata)).await {
+        Ok(Ok(size)) => Some(size),
+        Ok(Err(e)) => {
+            error!("Read cache file {:?} size error: {}", path, e);
+            None
+        }
+        Err(e) => {
+            error!("Read cache file {:?} size error: {}", path, e);
+            None
         }
     }
 }
