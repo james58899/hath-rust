@@ -172,7 +172,7 @@ jobs:
         target:
           - aarch64-linux-android
           - armv7-linux-androideabi
-          # - i686-linux-android
+          - i686-linux-android
           - x86_64-linux-android
     steps:
     - uses: actions/checkout@v4
@@ -193,10 +193,10 @@ jobs:
       env:
         CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER: "aarch64-linux-android21-clang"
         CARGO_TARGET_ARMV7_LINUX_ANDROIDEABI_LINKER: "armv7a-linux-androideabi21-clang"
-        # CARGO_TARGET_I686_LINUX_ANDROID_LINKER: "i686-linux-android21-clang"
+        CARGO_TARGET_I686_LINUX_ANDROID_LINKER: "i686-linux-android21-clang"
         CARGO_TARGET_X86_64_LINUX_ANDROID_LINKER: "x86_64-linux-android21-clang"
         CC_armv7-linux-androideabi: "armv7a-linux-androideabi21-clang"
-        # CC_i686-linux-android: "i686-linux-android21-clang"
+        CC_i686-linux-android: "i686-linux-android21-clang"
       run: |
         find "${ANDROID_NDK_ROOT}" -name "libunwind.a" -execdir touch libgcc.a \;
         export PATH=$PATH:${ANDROID_NDK_ROOT}/toolchains/llvm/prebuilt/linux-x86_64/bin
