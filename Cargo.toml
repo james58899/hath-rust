@@ -8,7 +8,7 @@ build = "build.rs"
 arc-swap = "1.7"
 async-stream = "0.3"
 axum = { version = "0.7", default-features = false, features = ["http1", "matched-path"] }
-bytes = "1.6"
+bytes = "1.7"
 chrono = { version = "0.4", default-features = false, features = [ "now" ] }
 clap = { version = "4.5", features = ["derive", "wrap_help"] }
 const_format = "0.2.32"
