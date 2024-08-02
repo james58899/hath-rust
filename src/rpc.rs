@@ -20,7 +20,7 @@ use openssl::{
     provider::Provider,
 };
 use parking_lot::{RwLock, RwLockUpgradableReadGuard};
-use rand::prelude::SliceRandom;
+use rand::{prelude::SliceRandom, rngs::SmallRng, SeedableRng};
 use reqwest::{IntoUrl, Url};
 
 use crate::{
@@ -345,8 +345,7 @@ The program will now terminate.
 
         let list: Vec<&str> = if failures.len() > 50 {
             // Random report 50 failures
-            let mut rng = rand::thread_rng();
-            failures.choose_multiple(&mut rng, 50).map(|s| s.as_ref()).collect()
+            failures.choose_multiple(&mut SmallRng::from_entropy(), 50).map(|s| s.as_ref()).collect()
         } else {
             failures.iter().map(|s| s.as_ref()).collect()
         };
@@ -567,7 +566,7 @@ The program will now terminate.
         }
 
         // Random servers
-        let server = servers.choose(&mut rand::thread_rng()).map_or(DEFAULT_SERVER, |s| s.as_str());
+        let server = servers.choose(&mut SmallRng::from_entropy()).map_or(DEFAULT_SERVER, |s| s.as_str());
 
         // Update server
         RwLockUpgradableReadGuard::upgrade(api_base).set_host(Some(server)).unwrap();
