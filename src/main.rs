@@ -9,7 +9,7 @@ use inquire::{
 };
 use log::{error, info, warn};
 use parking_lot::Mutex;
-use regex::Regex;
+use regex_lite::Regex;
 use reqwest::Proxy;
 use tempfile::TempPath;
 use tokio::{

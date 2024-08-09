@@ -10,7 +10,7 @@ use hex::FromHex;
 use log::{debug, error, info, warn};
 use openssl::sha::Sha1;
 use parking_lot::Mutex;
-use regex::Regex;
+use regex_lite::Regex;
 use reqwest::{Proxy, Url};
 use tokio::{
     fs::{self, create_dir_all},
