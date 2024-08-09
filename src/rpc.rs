@@ -345,7 +345,8 @@ The program will now terminate.
 
         let list: Vec<&str> = if failures.len() > 50 {
             // Random report 50 failures
-            failures.choose_multiple(&mut SmallRng::from_entropy(), 50).map(|s| s.as_ref()).collect()
+            let mut rng = SmallRng::from_entropy();
+            failures.choose_multiple(&mut rng, 50).map(|s| s.as_ref()).collect()
         } else {
             failures.iter().map(|s| s.as_ref()).collect()
         };
