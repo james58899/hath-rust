@@ -101,7 +101,7 @@ where
                 count,
                 ip,
                 code,
-                size,
+                size: 0,
                 start,
                 body_start: Instant::now(),
             }))
@@ -141,7 +141,11 @@ impl HttpBody for LoggerFinalizer {
 
     fn poll_frame(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
         let this = self.project();
-        this.body.poll_frame(cx)
+        let frame = this.body.poll_frame(cx);
+        if let Poll::Ready(Some(Ok(frame))) = &frame {
+            frame.data_ref().inspect(|b| *this.size += b.len() as u64);
+        }
+        frame
     }
 
     fn is_end_stream(&self) -> bool {
