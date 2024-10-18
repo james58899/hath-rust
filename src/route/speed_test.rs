@@ -36,11 +36,12 @@ pub(super) fn random_response(size: u64) -> Response<Body> {
             let mut filled = 0;
             while filled < size {
                 let size = cmp::min(size - filled, BUFFER_SIZE as u64) as usize;
+                filled += size as u64;
                 if size == BUFFER_SIZE {
                     yield Ok(buffer.clone());
+                    continue;
                 }
                 yield Ok::<Bytes, Infallible>(buffer.slice(0..size));
-                filled += size as u64;
             }
         }))
         .unwrap()
