@@ -491,8 +491,10 @@ impl CacheManager {
                     return;
                 }
                 dirs.sort_unstable_by(|(_, a), (_, b)| a.cmp(b));
-                target_dir = dirs[0].0.clone();
-                cut_off = dirs.get(1).map(|(_, t)| **t).unwrap_or_else(FileTime::now);
+                let (dir, time) = dirs[0];
+                target_dir = dir.clone();
+                // 1 day
+                cut_off = FileTime::from_unix_time(time.unix_seconds() + 86400, time.nanoseconds());
             }
 
             // List files
