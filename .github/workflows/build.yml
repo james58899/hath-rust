@@ -112,6 +112,7 @@ jobs:
     runs-on: windows-latest
     if: inputs.skip-windows != true
     strategy:
+      fail-fast: false
       matrix:
         target: ["x86_64-pc-windows-msvc", "i686-pc-windows-msvc"]
     steps:
