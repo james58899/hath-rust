@@ -515,7 +515,7 @@ fn switch_window(hide: bool) {
     };
 
     let mut window = unsafe { GetConsoleWindow() };
-    if window.0 == 0 && unsafe { AllocConsole().is_ok() } {
+    if window.is_invalid() && unsafe { AllocConsole().is_ok() } {
         window = unsafe { GetConsoleWindow() };
 
         // Try Disable close button
@@ -527,7 +527,7 @@ fn switch_window(hide: bool) {
         }
     }
 
-    if window.0 != 0 {
+    if !window.is_invalid() {
         unsafe {
             let _ = ShowWindow(window, if hide { SW_HIDE } else { SW_SHOW });
         }
