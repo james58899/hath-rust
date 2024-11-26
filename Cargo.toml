@@ -31,7 +31,7 @@ pin-project-lite = "0.2"
 rand = { version = "0.8", default-features = false, features = ["alloc", "getrandom", "small_rng"] }
 regex-lite = "0.1.6"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "stream", "socks"] }
-rustls = { version = "0.23.16", default-features = false, features = ["brotli", "ring", "std", "tls12"] }
+rustls = { version = "0.23.18", default-features = false, features = ["brotli", "ring", "std", "tls12"] }
 scopeguard = "1.2"
 sha1 = { version = "0.10.6", default-features = false, features = ["oid"] }
 tempfile = "3.10"
