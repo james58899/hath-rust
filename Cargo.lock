@@ -1564,15 +1564,15 @@ dependencies = [
 
 [[package]]
 name = "gix-path"
-version = "0.10.12"
+version = "0.10.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c04e5a94fdb56b1e91eb7df2658ad16832428b8eeda24ff1a0f0288de2bce554"
+checksum = "afc292ef1a51e340aeb0e720800338c805975724c1dfbd243185452efd8645b7"
 dependencies = [
  "bstr",
  "gix-trace",
  "home",
  "once_cell",
- "thiserror 1.0.69",
+ "thiserror 2.0.3",
 ]
 
 [[package]]
