@@ -1,5 +1,5 @@
 # hath-rust
-[![Build](../../actions/workflows/build.yml/badge.svg)](../../actions/workflows/build.yml)
+[![Build](../../actions/workflows/build.yml/badge.svg)](../../actions/workflows/build.yml) [![Docker Pulls](https://img.shields.io/docker/pulls/james58899/hath-rust)](https://hub.docker.com/r/james58899/hath-rust)
 
 The unofficial Hentai@Home client written in Rust.
 
@@ -61,12 +61,12 @@ Due to the lack of hardware or real environment, it was not tested before releas
 Experimental platform.  
 Not guaranteed to work, may break at any time.
 
-|         Platform        | State |            Notes            |
-| ----------------------- | :---: | --------------------------- |
-| aarch64-linux-android   |  ✅   |                             |
-| armv7-linux-androideabi |  ✅   |                             |
-| i686-linux-android      |  ❌   | Broken due to OpenSSL issue |
-| x86_64-linux-android    |  ✅   |                             |
+|         Platform        |
+| ----------------------- |
+| aarch64-linux-android   |
+| armv7-linux-androideabi |
+| i686-linux-android      |
+| x86_64-linux-android    |
 
 
 [^h2]: Multiplexing is useless for H@H, and a large number of connections will take up more system resources.
