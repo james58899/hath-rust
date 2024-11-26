@@ -21,7 +21,7 @@ http-body = "1.0"
 http-body-util = "0.1"
 hyper = { version = "1.5.1", features = ["http1", "server"] }
 hyper-util = { version = "0.1", features = ["tokio"] }
-idna_adapter = "~1.0.0" # Pin 1.0 to disable url idna support
+idna_adapter = "~1.2.0" # Pin 1.0 to disable url idna support
 inquire = "0.7"
 log = { version = "0.4", features = ["std"] }
 mime = "0.3"
