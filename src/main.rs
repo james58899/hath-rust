@@ -1,5 +1,5 @@
 #![windows_subsystem = "windows"]
-use std::{collections::HashMap, error::Error, ops::RangeInclusive, path::Path, sync::Arc, time::Duration};
+use std::{collections::HashMap, error::Error, ffi::c_char, ops::RangeInclusive, path::Path, sync::Arc, time::Duration};
 
 use clap::Parser;
 use futures::TryFutureExt;
@@ -48,12 +48,14 @@ mod util;
 static ALLOC: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 
 // jemalloc config
+#[allow(non_upper_case_globals)]
 #[cfg(not(any(target_env = "msvc")))]
 #[no_mangle]
-pub static mut malloc_conf: *const u8 = b"percpu_arena:phycpu,tcache:false,dirty_decay_ms:1000,muzzy_decay_ms:0\0".as_ptr();
+pub static mut malloc_conf: *const c_char = c"percpu_arena:phycpu,tcache:false,dirty_decay_ms:1000,muzzy_decay_ms:0".as_ptr();
+#[allow(non_upper_case_globals)]
 #[cfg(any(target_os = "android", target_os = "macos"))]
 #[no_mangle]
-pub static mut _rjem_malloc_conf: *const u8 = b"percpu_arena:phycpu,tcache:false,dirty_decay_ms:1000,muzzy_decay_ms:0\0".as_ptr();
+pub static mut _rjem_malloc_conf: *const c_char = c"percpu_arena:phycpu,tcache:false,dirty_decay_ms:1000,muzzy_decay_ms:0".as_ptr();
 
 const VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), "-", env!("VERGEN_GIT_SHA"));
 pub const CLIENT_VERSION: &str = "1.6.3";

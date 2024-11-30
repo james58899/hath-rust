@@ -319,7 +319,7 @@ The program will now terminate.
         None
     }
 
-    pub async fn dl_fails<T: AsRef<str>>(&self, failures: &Vec<T>) {
+    pub async fn dl_fails<T: AsRef<str>>(&self, failures: &[T]) {
         if failures.is_empty() {
             return;
         }
