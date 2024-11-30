@@ -113,6 +113,10 @@ struct Args {
     /// Quiet console output (specify multiple times to be quieter)
     #[arg(short, action = clap::ArgAction::Count)]
     quiet: u8,
+
+    /// Override bootstrap RPC server IP, used if rpc.hentaiathome.net cannot be resolved or is blocked.
+    #[arg(long)]
+    rpc_server_ip: Option<String>,
 }
 
 type DownloadState = Mutex<HashMap<[u8; 20], (watch::Receiver<Option<Arc<TempPath>>>, Arc<watch::Sender<u64>>)>>;
@@ -178,7 +182,13 @@ async fn main() -> Result<(), Box<dyn Error>> {
         Some(i) => i,
         None => setup(&args.data_dir).await?,
     };
-    let client = Arc::new(RPCClient::new(id, &key, args.disable_ip_origin_check, args.max_connection));
+    let client = Arc::new(RPCClient::new(
+        id,
+        &key,
+        args.disable_ip_origin_check,
+        args.max_connection,
+        args.rpc_server_ip.as_deref(),
+    ));
     let init_settings = client.login().await?;
 
     let (shutdown_send, shutdown_recv) = mpsc::unbounded_channel::<()>();

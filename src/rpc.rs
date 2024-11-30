@@ -116,7 +116,7 @@ impl Settings {
 }
 
 impl RPCClient {
-    pub fn new(id: i32, key: &str, disable_ip_check: bool, max_connection: u64) -> Self {
+    pub fn new(id: i32, key: &str, disable_ip_check: bool, max_connection: u64, bootstrap_server: Option<&str>) -> Self {
         if disable_ip_check {
             warn!("Disable server command ip check!");
         }
@@ -124,8 +124,9 @@ impl RPCClient {
             warn!("Override max connection: {}", max_connection);
         }
 
+        let host = bootstrap_server.unwrap_or(DEFAULT_SERVER);
         Self {
-            api_base: RwLock::new(Url::parse(format!("http://{DEFAULT_SERVER}/15/rpc?clientbuild={API_VERSION}").as_str()).unwrap()),
+            api_base: RwLock::new(Url::parse(format!("http://{host}/15/rpc?clientbuild={API_VERSION}").as_str()).unwrap()),
             clock_offset: AtomicI64::new(0),
             id,
             key: key.to_string(),
