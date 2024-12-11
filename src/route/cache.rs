@@ -45,7 +45,7 @@ pub(super) async fn hath(
     let xres = additional.get("xres").unwrap_or(&"");
     let content_disposition = (
         CONTENT_DISPOSITION,
-        HeaderValue::from_maybe_shared(format!("inline; filename=\"{file_name}\"")).unwrap(),
+        HeaderValue::from_maybe_shared(format!("inline; filename=\"{file_name}\"")).unwrap_or_else(|_| HeaderValue::from_static("inline")),
     );
 
     // keystamp check
