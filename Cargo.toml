@@ -36,7 +36,7 @@ scopeguard = "1.2"
 sha1 = { version = "0.10.6", default-features = false, features = ["oid"] }
 tempfile = "3.10"
 tokio = { version = "1", features = ["full", "parking_lot"] }
-tokio-rustls = { version = "0.26.0", default-features = false, features = ["tls12"] }
+tokio-rustls = { version = "0.26.1", default-features = false, features = ["tls12"] }
 tokio-stream = { version = "0.1", default-features = false, features = ["fs"] }
 tower = { version = "0.5.1", features = ["util", "timeout"] }
 tower-http = { version = "0.6.1", features = ["fs"] }
