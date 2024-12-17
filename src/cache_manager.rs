@@ -188,7 +188,10 @@ impl CacheManager {
                 error!("Create cache directory fail: {}", err);
                 return;
             }
+        }
 
+        // Insert cache date if not exist
+        if !self.cache_date.lock().contains_key(dir) {
             self.cache_date.lock().insert(dir.to_path_buf(), FileTime::now());
         }
 
