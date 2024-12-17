@@ -58,7 +58,7 @@ pub static mut malloc_conf: *const c_char = c"percpu_arena:phycpu,tcache:false,d
 pub static mut _rjem_malloc_conf: *const c_char = c"percpu_arena:phycpu,tcache:false,dirty_decay_ms:1000,muzzy_decay_ms:0".as_ptr();
 
 const VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), "-", env!("VERGEN_GIT_SHA"));
-pub const CLIENT_VERSION: &str = "1.6.3";
+pub const CLIENT_VERSION: &str = "1.6.4";
 const MAX_KEY_TIME_DRIFT: RangeInclusive<i64> = -300..=300;
 
 #[derive(Parser)]

@@ -25,7 +25,7 @@ use crate::{
     util::{create_http_client, string_to_hash},
 };
 
-const API_VERSION: i32 = 169; // For server check capabilities.
+const API_VERSION: i32 = 176; // For server check capabilities.
 const DEFAULT_SERVER: &str = "rpc.hentaiathome.net";
 
 type RequestError = Box<dyn std::error::Error + Send + Sync>;
