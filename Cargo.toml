@@ -68,6 +68,5 @@ tao = "0.30.8"
 vergen-gix = "1.0"
 
 [profile.release]
-opt-level = "s"
 lto = true
 strip = true
