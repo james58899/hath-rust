@@ -11,7 +11,6 @@ Read the [Wiki](https://github.com/james58899/hath-rust/wiki/Install)
 Features not included in the official.
 * Lower memory usage
 * Parallel async cache scan
-* TLS 1.3
 * Seamless certificate update
 * Using ChaCha20 on hardware without AES acceleration
 * Send filename to browser[^filename]
