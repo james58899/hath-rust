@@ -123,11 +123,7 @@ impl CacheManager {
         // Check exists and open file
         let metadata = metadata(&path).await.ok()?;
         if !metadata.is_file() || metadata.len() != info.size() as u64 {
-            warn!(
-                "Unexcepted cache file metadata: type={:?}, size={}",
-                metadata.file_type(),
-                metadata.len()
-            );
+            warn!("Unexcepted cache file metadata: type={:?}, size={}", metadata.file_type(), metadata.len());
             return None;
         }
         let mut file = match File::open(&path).await {
@@ -168,12 +164,7 @@ impl CacheManager {
 
             let hash: [u8; 20] = hasher.finalize().into();
             if hash != info.hash() {
-                warn!(
-                    "Detected corrupt cache file: path={:?}, hash={:x?}, actual={:x?}",
-                    &path,
-                    info.hash(),
-                    hash
-                );
+                warn!("Detected corrupt cache file: path={:?}, hash={:x?}, actual={:x?}", &path, info.hash(), hash);
                 cache_manager.remove_cache(&info).await;
             }
         });
@@ -338,12 +329,7 @@ impl CacheManager {
 
                     let size = metadata.len();
                     if size != info.size() as u64 {
-                        warn!(
-                            "Delete corrupt cache file: path={:?}, size={:x?}, actual={:x?}",
-                            &path,
-                            &info.size(),
-                            size
-                        );
+                        warn!("Delete corrupt cache file: path={:?}, size={:x?}, actual={:x?}", &path, &info.size(), size);
 
                         if let Err(err) = remove_file(&path).await {
                             error!("Delete corrupt cache file error: path={:?}, err={}", &path, err);
@@ -408,10 +394,7 @@ impl CacheManager {
                         }
                         let actual_hash: [u8; 20] = hasher.finalize().into();
                         if actual_hash != info.hash {
-                            warn!(
-                                "Delete corrupt cache file: path={:?}, hash={:x?}, actual={:x?}",
-                                path, &info.hash, &actual_hash
-                            );
+                            warn!("Delete corrupt cache file: path={:?}, hash={:x?}, actual={:x?}", path, &info.hash, &actual_hash);
                             if let Err(err) = remove_file(&path).await {
                                 error!("Delete corrupt cache file error: path={:?}, err={}", path, err);
                             }

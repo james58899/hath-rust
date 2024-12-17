@@ -325,11 +325,7 @@ The program will now terminate.
 
         let srv_res = self.send_action("dlfails", Some(&list.join(";"))).await;
 
-        debug!(
-            "Reported {} download failures with response {}.",
-            list.len(),
-            if srv_res.is_ok() { "OK" } else { "Fail" }
-        );
+        debug!("Reported {} download failures with response {}.", list.len(), if srv_res.is_ok() { "OK" } else { "Fail" });
     }
 
     pub async fn fetch_queue(&self, gallery: Option<&GalleryMeta>) -> Option<Vec<String>> {
@@ -482,10 +478,7 @@ The program will now terminate.
     fn build_url(&self, action: &str, additional: &str, endpoint: Option<&str>) -> Url {
         let mut url = self.api_base.read().clone();
         let timestamp = &self.get_timestemp().to_string();
-        let hash = string_to_hash(format!(
-            "hentai@home-{}-{}-{}-{}-{}",
-            action, additional, self.id, timestamp, self.key
-        ));
+        let hash = string_to_hash(format!("hentai@home-{}-{}-{}-{}-{}", action, additional, self.id, timestamp, self.key));
 
         if let Some(endpoint) = endpoint {
             url.path_segments_mut().unwrap().pop().push(endpoint);

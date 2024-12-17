@@ -1,6 +1,7 @@
 group_imports = "StdExternalCrate"
 imports_granularity = "Crate"
 max_width = 140
+fn_call_width = 140
 overflow_delimited_expr = true
 reorder_impl_items = true
 use_field_init_shorthand = true

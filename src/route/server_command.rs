@@ -69,23 +69,11 @@ pub(super) async fn servercmd(
             // Switch to MT tokio runtime
             let runtime = data.runtime.enter();
 
-            let mut rand = SmallRng::from_entropy();
+            let mut rng = SmallRng::from_entropy();
             let mut requests = Vec::new();
             for _ in 1..=count {
-                let url = Url::parse(
-                    format!(
-                        "{}://{}:{}/t/{}/{}/{}/{}",
-                        protocol,
-                        host,
-                        port,
-                        size,
-                        time,
-                        token,
-                        rand.gen::<u32>()
-                    )
-                    .as_str(),
-                )
-                .unwrap();
+                let random: u32 = rng.gen();
+                let url = Url::parse(&format!("{protocol}://{host}:{port}/t/{size}/{time}/{token}/{random}")).unwrap();
                 debug!("Speedtest thread start: {}", url);
                 let reqwest = create_http_client(Duration::from_secs(60), None); // No proxy http client
                 requests.push(tokio::spawn(async move {

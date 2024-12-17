@@ -163,14 +163,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     }
     let args = args.unwrap();
 
-    create_dirs(vec![
-        &args.data_dir,
-        &args.cache_dir,
-        &args.log_dir,
-        &args.temp_dir,
-        &args.download_dir,
-    ])
-    .await?;
+    create_dirs(vec![&args.data_dir, &args.cache_dir, &args.log_dir, &args.temp_dir, &args.download_dir]).await?;
 
     // Init logger
     let mut logger = Logger::init(args.log_dir).unwrap();
@@ -186,13 +179,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         Some(i) => i,
         None => setup(&args.data_dir).await?,
     };
-    let client = Arc::new(RPCClient::new(
-        id,
-        &key,
-        args.disable_ip_origin_check,
-        args.max_connection,
-        args.rpc_server_ip.as_deref(),
-    ));
+    let client = Arc::new(RPCClient::new(id, &key, args.disable_ip_origin_check, args.max_connection, args.rpc_server_ip.as_deref()));
     let init_settings = client.login().await?;
 
     let (shutdown_send, shutdown_recv) = mpsc::unbounded_channel::<()>();
@@ -226,19 +213,15 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let (tx, mut rx) = mpsc::channel::<Command>(1);
 
     info!("Starting HTTP server...");
-    let server = Server::new(
-        args.port.unwrap_or_else(|| init_settings.client_port()),
-        client.get_cert().await.unwrap(),
-        AppState {
-            runtime: Handle::current(),
-            reqwest: create_http_client(Duration::from_secs(30), proxy.clone()),
-            rpc: client.clone(),
-            download_state: Default::default(),
-            cache_manager: cache_manager.clone(),
-            command_channel: tx.clone(),
-            has_proxy,
-        },
-    );
+    let server = Server::new(args.port.unwrap_or_else(|| init_settings.client_port()), client.get_cert().await.unwrap(), AppState {
+        runtime: Handle::current(),
+        reqwest: create_http_client(Duration::from_secs(30), proxy.clone()),
+        rpc: client.clone(),
+        download_state: Default::default(),
+        cache_manager: cache_manager.clone(),
+        command_channel: tx.clone(),
+        has_proxy,
+    });
     let server_handle = server.handle();
 
     info!("Notifying the server that we have finished starting up the client...");
