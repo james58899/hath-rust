@@ -1,5 +1,7 @@
 #![windows_subsystem = "windows"]
-use std::{collections::HashMap, error::Error, ffi::c_char, ops::RangeInclusive, path::Path, sync::Arc, time::Duration};
+#[cfg(not(any(target_env = "msvc")))]
+use std::ffi::c_char;
+use std::{collections::HashMap, error::Error, ops::RangeInclusive, path::Path, sync::Arc, time::Duration};
 
 use clap::Parser;
 use futures::TryFutureExt;
