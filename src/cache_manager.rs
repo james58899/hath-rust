@@ -12,36 +12,35 @@ use std::{
     time::{Duration, SystemTime},
 };
 
+use async_stream::stream;
+use bytes::{Bytes, BytesMut};
 use filesize::{file_real_size, file_real_size_fast};
 use filetime::{set_file_mtime, FileTime};
-use futures::{stream, StreamExt, TryFutureExt};
+use futures::{stream, Stream, StreamExt, TryFutureExt};
 use hex::FromHex;
 use log::{debug, error, info, warn};
 use mime::Mime;
-use parking_lot::{Mutex, RwLock};
-use rand::{rngs::SmallRng, Rng, SeedableRng};
+use parking_lot::Mutex;
 use sha1::{Digest, Sha1};
 use tempfile::TempPath;
 use tokio::{
     fs::{copy, create_dir_all, metadata, read_dir, remove_dir_all, remove_file, rename, DirEntry, File},
     io::AsyncReadExt,
     spawn,
-    sync::mpsc::UnboundedSender,
+    sync::mpsc::{channel, UnboundedSender},
     task::spawn_blocking,
     time::{sleep_until, Instant},
 };
 use tokio_stream::wrappers::ReadDirStream;
+use tokio_util::io::ReaderStream;
 
 use crate::rpc::{InitSettings, Settings};
 
-const LRU_SIZE: usize = 1048576; // u16 * LRU_SIZE = 2MiB
 const SIZE_100MB: u64 = 100 * 1024 * 1024;
 
 pub struct CacheManager {
     cache_dir: PathBuf,
     cache_date: Mutex<HashMap<PathBuf, FileTime>>,
-    lru_cache: RwLock<Vec<u16>>,
-    lru_clear_pos: Mutex<usize>,
     temp_dir: PathBuf,
     total_size: Arc<AtomicU64>,
     size_limit: AtomicU64,
@@ -59,8 +58,6 @@ impl CacheManager {
         let new = Arc::new(Self {
             cache_dir: cache_dir.as_ref().to_path_buf(),
             cache_date: Mutex::new(HashMap::with_capacity(6000)),
-            lru_cache: RwLock::new(vec![0; LRU_SIZE]),
-            lru_clear_pos: Mutex::new(SmallRng::from_entropy().gen_range(0..LRU_SIZE)),
             temp_dir: temp_dir.as_ref().to_path_buf(),
             total_size: Arc::new(AtomicU64::new(0)),
             size_limit: AtomicU64::new(u64::MAX),
@@ -120,13 +117,75 @@ impl CacheManager {
         .unwrap()
     }
 
-    pub async fn get_file(&self, info: &CacheFileInfo) -> Option<PathBuf> {
-        let file = info.get_file(&self.cache_dir).await;
-        if file.is_some() {
-            self.mark_recently_accessed(info, true).await;
+    pub async fn get_file(self: &Arc<Self>, info: &CacheFileInfo) -> Option<impl Stream<Item = Result<Bytes, Error>>> {
+        let path = info.to_path(&self.cache_dir);
+
+        // Check exists and open file
+        let metadata = metadata(&path).await.ok()?;
+        if !metadata.is_file() || metadata.len() != info.size() as u64 {
+            warn!(
+                "Unexcepted cache file metadata: type={:?}, size={}",
+                metadata.file_type(),
+                metadata.len()
+            );
+            return None;
+        }
+        let mut file = match File::open(&path).await {
+            Ok(file) => file,
+            Err(err) => {
+                error!("Open cache file error: path={:?}, err={}", &path, err);
+                return None;
+            }
+        };
+
+        // Skip hash check if file is recently accessed
+        let one_week_ago = SystemTime::now() - Duration::from_secs(60 * 60 * 24 * 7);
+        if FileTime::from_last_modification_time(&metadata) >= one_week_ago.into() {
+            return Some(ReaderStream::with_capacity(file, 64 * 1024).boxed());
         }
 
-        file
+        self.mark_recently_accessed(info).await;
+        let cache_manager = self.clone();
+        let info = info.clone();
+        let (tx, mut rx) = channel::<Result<Bytes, Error>>(1);
+        tokio::spawn(async move {
+            let file_size = metadata.len();
+            let mut buffer = BytesMut::with_capacity(64 * 1024); // 64 KiB
+            let mut read_off = 0;
+            let mut hasher = Sha1::new();
+
+            while read_off < file_size {
+                buffer.reserve(64 * 1024);
+                match file.read_buf(&mut buffer).await {
+                    Ok(s) => read_off += s as u64,
+                    Err(err) => {
+                        let _ = tx.send(Err(err)).await;
+                    }
+                };
+                hasher.update(&buffer);
+                let _ = tx.send(Ok(buffer.split().freeze())).await;
+            }
+
+            let hash: [u8; 20] = hasher.finalize().into();
+            if hash != info.hash() {
+                warn!(
+                    "Detected corrupt cache file: path={:?}, hash={:x?}, actual={:x?}",
+                    &path,
+                    info.hash(),
+                    hash
+                );
+                cache_manager.remove_cache(&info).await;
+            }
+        });
+
+        Some(
+            stream! {
+                while let Some(item) = rx.recv().await {
+                    yield item;
+                }
+            }
+            .boxed(),
+        )
     }
 
     pub async fn import_cache(&self, info: &CacheFileInfo, file_path: &TempPath) {
@@ -157,8 +216,6 @@ impl CacheManager {
         // Fix permission
         fix_permission(&path).await;
 
-        self.mark_recently_accessed(info, false).await;
-
         if let Some(size) = async_filesize(&path).await {
             self.total_size.fetch_add(size, Relaxed);
         }
@@ -184,37 +241,18 @@ impl CacheManager {
         let size_limit = settings.size_limit();
         info!("Set size limit to {:} GiB", size_limit / 1024 / 1024 / 1024);
         self.size_limit.store(size_limit, Relaxed);
-
-        let disable_lru = settings.disable_lru_cache();
-        let disabled = self.lru_cache.read().is_empty();
-        if disable_lru && !disabled {
-            info!("Disable LRU cache");
-            let mut cache = self.lru_cache.write();
-            cache.clear();
-            cache.shrink_to_fit();
-        } else if !disable_lru && disabled {
-            info!("Enable LRU cache");
-            self.lru_cache.write().resize(LRU_SIZE, 0);
-        }
     }
 
     fn start_background_task(new: Arc<Self>) {
         let manager = Arc::downgrade(&new);
         spawn(async move {
-            let mut counter: u32 = 0;
+            // Check cache size every 10min
             let mut next_run = Instant::now();
             loop {
                 sleep_until(next_run).await;
                 if let Some(manager) = manager.upgrade() {
-                    // Cycle LRU cache
-                    manager.cycle_lru_cache();
-                    // Check cache size every 10min
-                    if counter % 60 == 0 {
-                        manager.check_cache_usage().await;
-                    }
-
-                    counter = counter.wrapping_add(1);
-                    next_run = Instant::now() + Duration::from_secs(10);
+                    manager.check_cache_usage().await;
+                    next_run = Instant::now() + Duration::from_secs(600);
                 } else {
                     break;
                 }
@@ -222,37 +260,14 @@ impl CacheManager {
         });
     }
 
-    async fn mark_recently_accessed(&self, info: &CacheFileInfo, update_file: bool) {
-        let hash = info.hash();
-        let index = (u32::from_be_bytes([0, hash[2], hash[3], hash[4]]) >> 4) as usize;
-        let bitmask: u16 = 1 << (hash[4] & 0b0000_1111);
-
-        // Check if the file is already in the cache.
-        if self.lru_cache.read().get(index).map(|bit| bit & bitmask != 0).unwrap_or(false) {
-            // Already marked, return
-            return;
-        }
-
-        // Mark the file as recently accessed.
-        if let Some(bit) = self.lru_cache.write().get_mut(index) {
-            *bit |= bitmask;
-        }
-
-        if update_file {
-            let path = info.to_path(&self.cache_dir);
-            if let Ok(metadata) = metadata(&path).await {
-                let one_week_ago = SystemTime::now() - Duration::from_secs(60 * 60 * 24 * 7);
-                if FileTime::from_last_modification_time(&metadata) < one_week_ago.into() {
-                    // Update file modification time
-                    let _ = spawn_blocking(move || {
-                        if let Err(err) = set_file_mtime(&path, FileTime::now()) {
-                            error!("Update cache file time error: path={:?}, err={}", &path, err);
-                        }
-                    })
-                    .await;
-                }
+    async fn mark_recently_accessed(&self, info: &CacheFileInfo) {
+        let path = info.to_path(&self.cache_dir);
+        let _ = spawn_blocking(move || {
+            if let Err(err) = set_file_mtime(&path, FileTime::now()) {
+                error!("Update cache file time error: path={:?}, err={}", &path, err);
             }
-        }
+        })
+        .await;
     }
 
     async fn scan_cache(&self, static_range: Vec<String>, parallelism: usize, verify_cache: bool) -> Result<(), Error> {
@@ -289,7 +304,6 @@ impl CacheManager {
 
         debug!("Cache dir number: {}", &dirs.len());
 
-        let lru_cutoff = FileTime::from_system_time(SystemTime::now() - Duration::from_secs(60 * 60 * 24 * 7)); // 1 week
         let mut counter = 0;
         let total = dirs.len();
         for dir in dirs.into_iter() {
@@ -347,11 +361,8 @@ impl CacheManager {
                             self.total_size.fetch_add(size, Relaxed);
                         }
 
-                        // Add recently accessed file to the cache.
+                        // Save oldest mtime
                         let mtime = FileTime::from_last_modification_time(&metadata);
-                        if mtime > lru_cutoff {
-                            self.mark_recently_accessed(&info, false).await;
-                        }
                         let mut time = time.lock();
                         if mtime < *time {
                             *time = mtime;
@@ -413,11 +424,8 @@ impl CacheManager {
                                 self.total_size.fetch_add(size, Relaxed);
                             }
 
-                            // Add recently accessed file to the cache.
+                            // Save oldest mtime
                             let mtime = FileTime::from_last_modification_time(&metadata);
-                            if mtime > lru_cutoff {
-                                self.mark_recently_accessed(&info, false).await;
-                            }
                             let mut time = time.lock();
                             if mtime < *time {
                                 *time = mtime;
@@ -447,17 +455,6 @@ impl CacheManager {
         info!("Finished cache scan. Cache size: {}", self.total_size.load(Relaxed));
 
         Ok(())
-    }
-
-    fn cycle_lru_cache(&self) {
-        let mut pos = self.lru_clear_pos.lock();
-        // 1048576 / (1week / 10s) =~ 17
-        for _ in 0..17 {
-            if let Some(bit) = self.lru_cache.write().get_mut(*pos) {
-                *bit = 0;
-                *pos = (*pos + 1) % LRU_SIZE;
-            }
-        }
     }
 
     async fn check_cache_usage(&self) {
@@ -770,16 +767,6 @@ impl CacheFileInfo {
         path.push(&hash[2..4]);
         path.push(filename);
         path
-    }
-
-    async fn get_file(&self, cache_dir: &Path) -> Option<PathBuf> {
-        let path = self.to_path(cache_dir);
-        let metadata = metadata(&path).await;
-        if metadata.is_ok() && metadata.unwrap().is_file() {
-            Some(path)
-        } else {
-            None
-        }
     }
 
     pub fn mime_type(&self) -> Mime {

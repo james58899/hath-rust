@@ -3,10 +3,10 @@ use std::{io::SeekFrom, ops::RangeInclusive, sync::Arc, time::Duration};
 use async_stream::stream;
 use axum::{
     body::Body,
-    extract::{Path, Request, State},
+    extract::{Path, State},
     http::{
         header::{CACHE_CONTROL, CONTENT_DISPOSITION, CONTENT_LENGTH, CONTENT_TYPE},
-        HeaderName, HeaderValue,
+        HeaderValue,
     },
     response::{IntoResponse, Response},
 };
@@ -20,8 +20,6 @@ use tokio::{
     sync::watch,
     time::timeout,
 };
-use tower::util::ServiceExt;
-use tower_http::services::ServeFile;
 
 use crate::{
     cache_manager::CacheFileInfo,
@@ -31,22 +29,17 @@ use crate::{
 };
 
 const TTL: RangeInclusive<i64> = -900..=900; // Token TTL 15 minutes
-#[allow(clippy::declare_interior_mutable_const)]
-const CACHE_HEADER: (HeaderName, HeaderValue) = (CACHE_CONTROL, HeaderValue::from_static("public, max-age=31536000"));
+const CACHE_HEADER: HeaderValue = HeaderValue::from_static("public, max-age=31536000");
+const DEFAULT_CD: HeaderValue = HeaderValue::from_static("inline");
 
 pub(super) async fn hath(
     Path((file_id, additional, file_name)): Path<(String, String, String)>,
     data: State<Arc<AppState>>,
-    req: Request,
 ) -> impl IntoResponse {
     let additional = parse_additional(&additional);
     let mut keystamp = additional.get("keystamp").unwrap_or(&"").split('-');
     let file_index = additional.get("fileindex").unwrap_or(&"");
     let xres = additional.get("xres").unwrap_or(&"");
-    let content_disposition = (
-        CONTENT_DISPOSITION,
-        HeaderValue::from_maybe_shared(format!("inline; filename=\"{file_name}\"")).unwrap_or_else(|_| HeaderValue::from_static("inline")),
-    );
 
     // keystamp check
     let time = keystamp.next().unwrap_or_default();
@@ -57,22 +50,27 @@ pub(super) async fn hath(
         return forbidden();
     };
 
-    // Check cache hit
+    // Parse file info
     let info = match CacheFileInfo::from_file_id(&file_id) {
         Some(info) => info,
         None => return not_found(),
     };
-    if let Some(path) = data.cache_manager.get_file(&info).await {
-        let mut res = ServeFile::new_with_mime(path, &info.mime_type()).oneshot(req).await.unwrap();
-        let header = res.headers_mut();
-        header.insert(CACHE_HEADER.0, CACHE_HEADER.1);
-        header.insert(content_disposition.0, content_disposition.1);
-        return res.map(Body::new);
+    let file_size = info.size() as u64;
+    let content_type = HeaderValue::from_maybe_shared(info.mime_type().to_string()).unwrap();
+    let content_disposition = HeaderValue::from_maybe_shared(format!("inline; filename=\"{file_name}\"")).unwrap_or(DEFAULT_CD);
+
+    // Check cache hit
+    if let Some(file) = data.cache_manager.get_file(&info).await {
+        return Response::builder()
+            .header(CACHE_CONTROL, CACHE_HEADER)
+            .header(CONTENT_LENGTH, file_size)
+            .header(CONTENT_TYPE, content_type)
+            .header(CONTENT_DISPOSITION, content_disposition)
+            .body(Body::from_stream(file))
+            .unwrap();
     }
 
     // Cache miss, proxy request
-    let file_size = info.size() as u64;
-
     // Check if the file is already downloading
     let (temp_tx, temp_rx) = watch::channel(None); // Tempfile
     let tx = Arc::new(watch::channel(0).0); // Download progress
@@ -206,10 +204,10 @@ pub(super) async fn hath(
     }
 
     Response::builder()
+        .header(CACHE_CONTROL, CACHE_HEADER)
         .header(CONTENT_LENGTH, file_size)
-        .header(CONTENT_TYPE, HeaderValue::from_maybe_shared(info.mime_type().to_string()).unwrap())
-        .header(CACHE_HEADER.0, CACHE_HEADER.1)
-        .header(content_disposition.0, content_disposition.1)
+        .header(CONTENT_TYPE, content_type)
+        .header(CONTENT_DISPOSITION, content_disposition)
         .body(Body::from_stream(stream! {
             let mut file = File::open(temp_path.as_ref()).await.unwrap();
             let mut read_off = 0;
