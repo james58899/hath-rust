@@ -9,7 +9,7 @@ arc-swap = "1.7"
 async-stream = "0.3"
 axum = { version = "0.7", default-features = false, features = ["http1", "matched-path"] }
 base64 = "0.22.1"
-bytes = "1.6"
+bytes = "1.9.0"
 chrono = { version = "0.4", default-features = false, features = [ "now" ] }
 clap = { version = "4.5", features = ["derive", "wrap_help"] }
 const_format = "0.2.32"
@@ -33,14 +33,14 @@ regex-lite = "0.1.6"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "stream", "socks"] }
 rustls = { version = "0.23.18", default-features = false, features = ["brotli", "ring", "std", "tls12", "zlib"] }
 scopeguard = "1.2"
-tempfile = "3.10"
-tokio = { version = "1", features = ["full", "parking_lot"] }
+tempfile = "3.14.0"
+tokio = { version = "1.42.0", features = ["full", "parking_lot"] }
 tokio-rustls = { version = "0.26.0", default-features = false, features = ["tls12"] }
 tokio-stream = { version = "0.1", default-features = false, features = ["fs"] }
 tokio-util = { version = "0.7.13", features = ["io"] }
 tower = { version = "0.5.1", features = ["timeout"] }
-unicode-segmentation = "1.11.0"
-webpki-roots = "0.26.3"
+unicode-segmentation = "1.12.0"
+webpki-roots = "0.26.7"
 x509-cert = { version = "0.2.5", default-features = false }
 x509-ocsp = { version = "0.2.1", features = ["builder"] }
 
@@ -62,7 +62,7 @@ sha1 = { version = "0.10.6", default-features = false, features = ["asm", "oid"]
 sha1 = { version = "0.10.6", default-features = false, features = ["oid"] } # sha1-asm not support windows
 tray-icon = { version = "0.19.1", default-features = false }
 windows = { version = "0.58.0", features = ["Win32_Foundation", "Win32_System_Console", "Win32_UI_WindowsAndMessaging", "Win32_Storage_FileSystem"] }
-tao = "0.30.8"
+tao = "0.31.0"
 
 [build-dependencies]
 vergen-gix = "1.0"
