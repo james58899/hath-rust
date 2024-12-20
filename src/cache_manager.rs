@@ -21,11 +21,12 @@ use hex::FromHex;
 use log::{debug, error, info, warn};
 use mime::Mime;
 use parking_lot::Mutex;
+use serde::{Deserialize, Serialize};
 use sha1::{Digest, Sha1};
 use tempfile::TempPath;
 use tokio::{
     fs::{copy, create_dir_all, metadata, read_dir, remove_dir_all, remove_file, rename, DirEntry, File},
-    io::AsyncReadExt,
+    io::{AsyncReadExt, AsyncWriteExt},
     spawn,
     sync::mpsc::{channel, UnboundedSender},
     task::spawn_blocking,
@@ -41,10 +42,12 @@ const SIZE_100MB: u64 = 100 * 1024 * 1024;
 pub struct CacheManager {
     cache_dir: PathBuf,
     cache_state: Mutex<HashMap<String, CacheState>>,
+    cache_state_path: PathBuf,
     temp_dir: PathBuf,
     size_limit: AtomicU64,
 }
 
+#[derive(Serialize, Deserialize)]
 struct CacheState {
     file_count: u64,
     size: u64,
@@ -75,6 +78,7 @@ impl Default for CacheState {
 
 impl CacheManager {
     pub async fn new<P: AsRef<Path>>(
+        data_dir: P,
         cache_dir: P,
         temp_dir: P,
         settings: Arc<Settings>,
@@ -85,11 +89,13 @@ impl CacheManager {
         let new = Arc::new(Self {
             cache_dir: cache_dir.as_ref().to_path_buf(),
             cache_state: Default::default(),
+            cache_state_path: data_dir.as_ref().join("cache_state.dat"),
             temp_dir: temp_dir.as_ref().to_path_buf(),
             size_limit: AtomicU64::new(u64::MAX),
         });
         new.update_settings(settings);
 
+        delete_java_cache_data(data_dir).await; // Force official version rescan cache
         clean_temp_dir(temp_dir.as_ref()).await;
 
         let manager = new.clone();
@@ -97,6 +103,22 @@ impl CacheManager {
         let static_range = init_settings.static_range();
         let free = get_available_space(cache_dir.as_ref());
         let low_disk = free.is_some_and(|x| x < SIZE_100MB);
+
+        // Load cache state
+        if !verify_cache {
+            let old_state = match read_state(&new.cache_state_path).await {
+                Ok(state) => state,
+                Err(err) => {
+                    error!("Load cache state error: err={}", err);
+                    HashMap::new()
+                }
+            };
+            for (sr, state) in old_state {
+                if static_range.contains(&sr) {
+                    new.cache_state.lock().insert(sr, state);
+                }
+            }
+        }
 
         if low_disk || (verify_cache && !force_background_scan) {
             // Low space or force cache check
@@ -260,6 +282,26 @@ impl CacheManager {
         self.size_limit.store(size_limit, Relaxed);
     }
 
+    pub async fn save_state(&self) {
+        let mut file = match File::create(&self.cache_state_path).await {
+            Ok(file) => file,
+            Err(err) => {
+                error!("Create cache state file error: err={}", err);
+                return;
+            }
+        };
+        let buf = match rmp_serde::to_vec_named(&*self.cache_state.lock()) {
+            Ok(buf) => buf,
+            Err(err) => {
+                error!("Serialize cache state error: err={}", err);
+                return;
+            }
+        };
+        if let Err(err) = file.write_all(&buf).await {
+            error!("Write cache state error: err={}", err);
+        }
+    }
+
     fn start_background_task(new: Arc<Self>) {
         let manager = Arc::downgrade(&new);
         spawn(async move {
@@ -268,6 +310,7 @@ impl CacheManager {
             loop {
                 sleep_until(next_run).await;
                 if let Some(manager) = manager.upgrade() {
+                    manager.save_state().await;
                     manager.check_cache_usage().await;
                     next_run = Instant::now() + Duration::from_secs(600);
                 } else {
@@ -308,8 +351,8 @@ impl CacheManager {
 
                 let mut hash = l1.file_name().clone();
                 hash.push(l2.file_name());
-                if static_range.iter().any(|sr| hash.eq_ignore_ascii_case(sr)) {
-                    dirs.push(l2_path);
+                if let Some(sr) = static_range.iter().find(|sr| hash.eq_ignore_ascii_case(sr)) {
+                    dirs.push((sr, l2_path));
                 } else {
                     warn!("Delete not in static range dir: {}", l2_path.to_str().unwrap_or_default());
                     if let Err(err) = remove_dir_all(&l2_path).await {
@@ -323,9 +366,18 @@ impl CacheManager {
 
         let mut counter = 0;
         let total = dirs.len();
-        for dir in dirs.into_iter() {
+        for (sr, path) in dirs.into_iter() {
+            // Check old state match
+            let file_count = ReadDirStream::new(read_dir(&path).await?).count().await as u64;
+            if file_count == self.cache_state.lock().get(sr).map(|s| s.file_count).unwrap_or(0) {
+                counter += 1;
+                continue;
+            }
+
+            // State mismatch, scan dir
+            self.cache_state.lock().remove(sr); // Clear old state
             let btree = Mutex::new(BTreeMap::new());
-            ReadDirStream::new(read_dir(&dir).await?)
+            ReadDirStream::new(read_dir(&path).await?)
                 .for_each_concurrent(parallelism, |entry| async {
                     if let Err(err) = entry {
                         error!("Read cache dir error: {}", err);
@@ -599,6 +651,20 @@ async fn async_filesize_fast(path: &Path, metadata: &Metadata) -> Option<u64> {
             None
         }
     }
+}
+
+async fn delete_java_cache_data<P: AsRef<Path>>(data_dir: P) {
+    let base = data_dir.as_ref();
+    let _ = remove_file(base.join("pcache_info")).await;
+    let _ = remove_file(base.join("pcache_ages")).await;
+    let _ = remove_file(base.join("pcache_lru")).await;
+}
+
+async fn read_state(path: &Path) -> Result<HashMap<String, CacheState>, Box<dyn std::error::Error>> {
+    let mut file = File::open(path).await?;
+    let mut buf = Vec::new();
+    file.read_to_end(&mut buf).await?;
+    Ok(rmp_serde::from_slice(&buf)?)
 }
 
 #[cfg(unix)]
