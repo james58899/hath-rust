@@ -40,10 +40,37 @@ const SIZE_100MB: u64 = 100 * 1024 * 1024;
 
 pub struct CacheManager {
     cache_dir: PathBuf,
-    cache_date: Mutex<HashMap<PathBuf, FileTime>>,
+    cache_state: Mutex<HashMap<String, CacheState>>,
     temp_dir: PathBuf,
-    total_size: Arc<AtomicU64>,
     size_limit: AtomicU64,
+}
+
+struct CacheState {
+    file_count: u64,
+    size: u64,
+    oldest: i64,
+}
+
+impl CacheState {
+    fn add_file(&mut self, size: u64) {
+        self.file_count += 1;
+        self.size += size;
+    }
+
+    fn remove_file(&mut self, size: u64) {
+        self.file_count -= 1;
+        self.size -= size;
+    }
+}
+
+impl Default for CacheState {
+    fn default() -> Self {
+        Self {
+            file_count: 0,
+            size: 0,
+            oldest: FileTime::now().unix_seconds(),
+        }
+    }
 }
 
 impl CacheManager {
@@ -57,9 +84,8 @@ impl CacheManager {
     ) -> Result<Arc<Self>, Error> {
         let new = Arc::new(Self {
             cache_dir: cache_dir.as_ref().to_path_buf(),
-            cache_date: Mutex::new(HashMap::with_capacity(6000)),
+            cache_state: Default::default(),
             temp_dir: temp_dir.as_ref().to_path_buf(),
-            total_size: Arc::new(AtomicU64::new(0)),
             size_limit: AtomicU64::new(u64::MAX),
         });
         new.update_settings(settings);
@@ -190,11 +216,6 @@ impl CacheManager {
             }
         }
 
-        // Insert cache date if not exist
-        if !self.cache_date.lock().contains_key(dir) {
-            self.cache_date.lock().insert(dir.to_path_buf(), FileTime::now());
-        }
-
         // Try remove existing file
         self.remove_cache(info).await;
 
@@ -211,24 +232,26 @@ impl CacheManager {
         fix_permission(&path).await;
 
         if let Some(size) = async_filesize(&path).await {
-            self.total_size.fetch_add(size, Relaxed);
+            self.cache_state.lock().entry(info.static_range()).or_default().add_file(size);
         }
     }
 
-    pub async fn remove_cache(&self, info: &CacheFileInfo) {
+    pub async fn remove_cache(&self, info: &CacheFileInfo) -> Option<()> {
         let path = info.to_path(&self.cache_dir);
-        if let Ok(metadata) = metadata(&path).await {
-            debug!("Delete cache: {:?}", path);
-            let total_size = self.total_size.clone();
-            if let Some(size) = async_filesize_fast(&path, &metadata).await {
-                match std::fs::remove_file(&path) {
-                    Ok(_) => {
-                        total_size.fetch_sub(size, Relaxed);
-                    }
-                    Err(err) => error!("Delete cache file error: path={:?}, err={}", &path, err),
-                }
-            }
+        let metadata = metadata(&path).await.ok()?;
+        let size = async_filesize_fast(&path, &metadata).await?;
+
+        debug!("Delete cache: {:?}", path);
+        if let Err(err) = std::fs::remove_file(&path) {
+            error!("Delete cache file error: path={:?}, err={}", &path, err);
+            return None;
         }
+
+        if let Some(state) = self.cache_state.lock().get_mut(&info.static_range()) {
+            state.remove_file(size);
+        }
+
+        Some(())
     }
 
     pub fn update_settings(&self, settings: Arc<Settings>) {
@@ -301,7 +324,6 @@ impl CacheManager {
         let mut counter = 0;
         let total = dirs.len();
         for dir in dirs.into_iter() {
-            let time = Mutex::new(FileTime::now());
             let btree = Mutex::new(BTreeMap::new());
             ReadDirStream::new(read_dir(&dir).await?)
                 .for_each_concurrent(parallelism, |entry| async {
@@ -345,16 +367,17 @@ impl CacheManager {
                         let mut btree = btree.lock();
                         let inode = get_inode(&metadata).unwrap_or(btree.len() as u64); // sort by inode or sequential
                         btree.insert(inode, path);
-                    } else {
-                        if let Some(size) = async_filesize_fast(&path, &metadata).await {
-                            self.total_size.fetch_add(size, Relaxed);
-                        }
+                        return;
+                    }
 
-                        // Save oldest mtime
-                        let mtime = FileTime::from_last_modification_time(&metadata);
-                        let mut time = time.lock();
-                        if mtime < *time {
-                            *time = mtime;
+                    // Update cache state
+                    if let Some(size) = async_filesize_fast(&path, &metadata).await {
+                        let mtime = FileTime::from_last_modification_time(&metadata).unix_seconds();
+                        let mut cache_state = self.cache_state.lock();
+                        let state = cache_state.entry(info.static_range()).or_default();
+                        state.add_file(size);
+                        if state.oldest > mtime {
+                            state.oldest = mtime;
                         }
                     }
                 })
@@ -368,7 +391,7 @@ impl CacheManager {
                         let mut file = match File::open(&path).await {
                             Ok(file) => file,
                             Err(err) => {
-                                error!("Open cache file {} error: {}", path.display(), err);
+                                error!("Open cache file {:?} error: {}", path, err);
                                 return;
                             }
                         };
@@ -390,7 +413,7 @@ impl CacheManager {
                                     hasher.update(&buf[0..n]);
                                 }
                                 Err(e) => {
-                                    error!("Read cache file {} error: {}", path.display(), e);
+                                    error!("Read cache file {:?} error: {}", path, e);
                                     break;
                                 }
                             }
@@ -404,17 +427,16 @@ impl CacheManager {
                             return;
                         }
 
-                        // File is correct, calculate size
+                        // File is correct, update cache state
                         if let Ok(metadata) = file.metadata().await {
                             if let Some(size) = async_filesize_fast(&path, &metadata).await {
-                                self.total_size.fetch_add(size, Relaxed);
-                            }
-
-                            // Save oldest mtime
-                            let mtime = FileTime::from_last_modification_time(&metadata);
-                            let mut time = time.lock();
-                            if mtime < *time {
-                                *time = mtime;
+                                let mtime = FileTime::from_last_modification_time(&metadata).unix_seconds();
+                                let mut cache_state = self.cache_state.lock();
+                                let state = cache_state.entry(info.static_range()).or_default();
+                                state.add_file(size);
+                                if state.oldest > mtime {
+                                    state.oldest = mtime;
+                                }
                             }
                         }
                     })
@@ -426,9 +448,6 @@ impl CacheManager {
             if counter % 100 == 0 || counter == total {
                 info!("Scanned {}/{} static ranges.", counter, total);
             }
-
-            // Save mtime
-            self.cache_date.lock().insert(dir, time.into_inner());
         }
 
         if counter == 0 && static_range.len() > 20 {
@@ -438,13 +457,18 @@ impl CacheManager {
             return Err(Error::new(std::io::ErrorKind::NotFound, "Cache is empty."));
         }
 
-        info!("Finished cache scan. Cache size: {}", self.total_size.load(Relaxed));
+        let (total_size, file_count) = self
+            .cache_state
+            .lock()
+            .values()
+            .fold((0, 0), |(size, count), state| (size + state.size, count + state.file_count));
+        info!("Finished cache scan. Cache size: {}, file count: {}", total_size, file_count);
 
         Ok(())
     }
 
     async fn check_cache_usage(&self) {
-        let total_size = self.total_size.load(Relaxed);
+        let total_size = self.cache_state.lock().values().fold(0, |acc, state| acc + state.size);
         let size_limit = self.size_limit.load(Relaxed);
         let disk_free = get_available_space(&self.cache_dir);
         let mut need_free = total_size.saturating_sub(size_limit);
@@ -465,19 +489,21 @@ impl CacheManager {
         debug!("Start cache cleaner: need_free={}bytes", need_free);
         while need_free > 0 {
             // Select the oldest directory
+            let static_range;
             let target_dir;
             let cut_off;
             {
-                let map = self.cache_date.lock();
-                let mut dirs = map.iter().collect::<Vec<_>>();
-                if dirs.is_empty() {
+                let map = self.cache_state.lock();
+                let mut state = map.iter().collect::<Vec<_>>();
+                if state.is_empty() {
                     return;
                 }
-                dirs.sort_unstable_by(|(_, a), (_, b)| a.cmp(b));
-                let (dir, time) = dirs[0];
-                target_dir = dir.clone();
+                state.sort_unstable_by(|(_, a), (_, b)| a.oldest.cmp(&b.oldest));
+                let (sr, state) = state[0];
+                static_range = sr.clone();
+                target_dir = self.cache_dir.join(&sr[0..2]).join(&sr[2..4]);
                 // 1 day
-                cut_off = FileTime::from_unix_time(time.unix_seconds() + 86400, time.nanoseconds());
+                cut_off = FileTime::from_unix_time(state.oldest + 86400, 0);
             }
 
             // List files
@@ -536,7 +562,10 @@ impl CacheManager {
                 }
             }
 
-            self.cache_date.lock().insert(target_dir, new_oldest);
+            // Update oldest
+            if let Some(state) = self.cache_state.lock().get_mut(&static_range) {
+                state.oldest = new_oldest.unix_seconds();
+            }
         }
     }
 }
@@ -753,6 +782,10 @@ impl CacheFileInfo {
         path.push(&hash[2..4]);
         path.push(filename);
         path
+    }
+
+    fn static_range(&self) -> String {
+        hex::encode(&self.hash[0..2])
     }
 
     pub fn mime_type(&self) -> Mime {
