@@ -126,14 +126,14 @@ impl LoggerWorker {
 
             let mut err_lines: u32 = 0;
             let mut out_lines: u32 = 0;
-            let mut writer_err = match std::fs::File::create(log_err).map(File::from_std) {
+            let mut writer_err = match File::create(log_err).await {
                 Ok(w) => w,
                 Err(err) => {
                     eprintln!("Log create error: {:?}", err);
                     return;
                 }
             };
-            let mut writer_out = std::fs::File::create(log_out).map(File::from_std).map(BufWriter::new).unwrap();
+            let mut writer_out = File::create(log_out).await.map(BufWriter::new).unwrap();
 
             loop {
                 select! {

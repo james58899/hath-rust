@@ -208,7 +208,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
         }
         None => None,
     };
-    let has_proxy = proxy.is_some();
     // Command channel
     let (tx, mut rx) = mpsc::channel::<Command>(1);
 
@@ -220,7 +219,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         download_state: Default::default(),
         cache_manager: cache_manager.clone(),
         command_channel: tx.clone(),
-        has_proxy,
+        has_proxy: proxy.is_some(),
     });
     let server_handle = server.handle();
 
