@@ -15,7 +15,7 @@ use regex_lite::Regex;
 use reqwest::Proxy;
 use tempfile::TempPath;
 use tokio::{
-    fs::{self, remove_file, try_exists, File},
+    fs::{self, try_exists, File},
     io::{stderr, stdin, AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader},
     runtime::Handle,
     signal,
@@ -185,8 +185,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let (shutdown_send, shutdown_recv) = mpsc::unbounded_channel::<()>();
     let settings = client.settings();
     logger.config().write_info(!settings.disable_logging());
-    delete_java_cache_data(args.data_dir).await; // Rust cache data incompatible with Java, so we must delete it
     let cache_manager = CacheManager::new(
+        args.data_dir,
         args.cache_dir,
         args.temp_dir,
         settings.clone(),
@@ -296,6 +296,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     // Schedule task
     let client3 = client.clone();
+    let cache_manager3 = cache_manager.clone();
     let keepalive = tokio::spawn(async move {
         let mut counter: u32 = 0;
         let mut next_run = Instant::now() + Duration::from_secs(10);
@@ -315,7 +316,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             if counter % 2160 == 2159 {
                 if let Some(list) = client3.get_purgelist(43200).await {
                     for info in list.iter().filter_map(CacheFileInfo::from_file_id) {
-                        cache_manager.remove_cache(&info).await;
+                        cache_manager3.remove_cache(&info).await;
                     }
                 }
             }
@@ -337,6 +338,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     info!("Shutdown in progress - please wait");
     sleep(Duration::from_secs(15)).await;
     server.shutdown().await;
+    cache_manager.save_state().await;
     logger.shutdown().await;
     Ok(())
 }
@@ -407,13 +409,6 @@ After registering, enter your ID and Key below to start your client.
     }
 
     Ok((id, key))
-}
-
-async fn delete_java_cache_data<P: AsRef<Path>>(data_dir: P) {
-    let base = data_dir.as_ref();
-    let _ = remove_file(base.join("pcache_info")).await;
-    let _ = remove_file(base.join("pcache_ages")).await;
-    let _ = remove_file(base.join("pcache_lru")).await;
 }
 
 #[cfg(unix)]

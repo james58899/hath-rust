@@ -1902,6 +1902,8 @@ dependencies = [
  "rustix",
  "rustls",
  "scopeguard",
+ "serde",
+ "serde_json",
  "sha1",
  "tao",
  "tempfile",
