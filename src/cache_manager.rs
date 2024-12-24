@@ -373,6 +373,9 @@ impl CacheManager {
             };
             if file_count == self.cache_state.lock().get(sr).map(|s| s.file_count).unwrap_or(0) {
                 counter += 1;
+                if counter % 100 == 0 || counter == total {
+                    info!("Scanned {}/{} static ranges.", counter, total);
+                }
                 continue;
             }
 
