@@ -2927,9 +2927,9 @@ checksum = "53a49587ad06b26609c52e423de037e7f57f20d53535d66e08c695f347df952a"
 
 [[package]]
 name = "reqwest"
-version = "0.12.9"
+version = "0.12.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a77c62af46e79de0a562e1a9849205ffcb7fc1238876e9bd743357570e04046f"
+checksum = "3d3536321cfc54baa8cf3e273d5e1f63f889067829c4b410fcdbac8ca7b80994"
 dependencies = [
  "base64",
  "bytes",
@@ -2960,6 +2960,7 @@ dependencies = [
  "tokio-rustls",
  "tokio-socks",
  "tokio-util",
+ "tower",
  "tower-service",
  "url",
  "wasm-bindgen",
