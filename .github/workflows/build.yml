@@ -131,6 +131,9 @@ jobs:
           rustup update
           rustup target add ${{ matrix.target }}
       - name: Build
+        env:
+          CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER: "rust-lld"
+          CARGO_TARGET_I686_PC_WINDOWS_MSVC_LINKER: "rust-lld"
         run: cargo build --verbose --release --target ${{ matrix.target }}
       - uses: actions/upload-artifact@v4
         with:
