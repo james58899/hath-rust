@@ -656,7 +656,7 @@ fn sort_by_inode(files: &mut [DirEntry]) {
 }
 
 #[cfg(not(unix))]
-fn sort_by_inode(files: &mut [DirEntry]) {
+fn sort_by_inode(_files: &mut [DirEntry]) {
     // Not support
 }
 
@@ -699,7 +699,7 @@ fn get_available_space(path: &Path) -> Option<u64> {
 }
 
 #[cfg(not(any(unix, windows)))]
-fn get_available_space(path: &Path) -> Option<u64> {
+fn get_available_space(_path: &Path) -> Option<u64> {
     None // Not support
 }
 
