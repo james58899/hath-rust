@@ -33,7 +33,7 @@ regex-lite = "0.1.6"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "stream", "socks"] }
 rustls = { version = "0.23.18", default-features = false, features = ["brotli", "ring", "std", "tls12", "zlib"] }
 scopeguard = "1.2"
-tempfile = "3.14.0"
+tempfile = "3.15.0"
 tokio = { version = "1.42.0", features = ["full", "parking_lot"] }
 tokio-rustls = { version = "0.26.0", default-features = false, features = ["tls12"] }
 tokio-stream = { version = "0.1", default-features = false, features = ["fs"] }
