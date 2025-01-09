@@ -21,9 +21,9 @@ pub fn register_route(router: Router<Arc<AppState>>) -> Router<Arc<AppState>> {
     router
         .route("/favicon.ico", get(favicon).head(favicon))
         .route("/robots.txt", get(robots).head(robots))
-        .route("/servercmd/:command/:additional/:time/:key", get(servercmd).head(servercmd))
-        .route("/t/:size/:time/:hash/:random", get(speedtest).head(speedtest))
-        .route("/h/:fileid/:additional/*filename", get(hath).head(hath))
+        .route("/servercmd/{command}/{additional}/{time}/{key}", get(servercmd).head(servercmd))
+        .route("/t/{size}/{time}/{hash}/{random}", get(speedtest).head(speedtest))
+        .route("/h/{fileid}/{additional}/{*filename}", get(hath).head(hath))
         .fallback(get(default).head(default))
 }
 

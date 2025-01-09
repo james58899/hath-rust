@@ -9,7 +9,7 @@ use std::{
 };
 
 use arc_swap::ArcSwap;
-use axum::{async_trait, extract::FromRequestParts, http::request::Parts, Extension, Router};
+use axum::{extract::FromRequestParts, http::request::Parts, Extension, Router};
 use futures::pin_mut;
 use hyper::server::conn::http1;
 use hyper_util::rt::{TokioIo, TokioTimer};
@@ -159,7 +159,6 @@ impl Deref for ClientAddr {
     }
 }
 
-#[async_trait]
 impl<S> FromRequestParts<S> for ClientAddr
 where
     S: Send + Sync,

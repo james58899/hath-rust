@@ -7,7 +7,7 @@ build = "build.rs"
 [dependencies]
 arc-swap = "1.7"
 async-stream = "0.3"
-axum = { version = "0.7", default-features = false, features = ["http1", "matched-path"] }
+axum = { version = "0.8", default-features = false, features = ["http1", "matched-path"] }
 base64 = "0.22.1"
 bytes = "1.9.0"
 chrono = { version = "0.4", default-features = false, features = [ "now" ] }
