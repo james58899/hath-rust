@@ -375,11 +375,22 @@ The program will now terminate.
         if let Ok(res) = self.send_action("still_alive", Some(if resume { "resume" } else { "" })).await {
             if res.is_ok() {
                 debug!("Successfully performed a stillAlive test for the server.");
-            } else if res.status == "TERM_BAD_NETWORK" {
-                error!("Client is shutting down since the network is misconfigured; correct firewall/forwarding settings then restart the client.");
-                return false; // Shutdown by RPC
-            } else {
-                warn!("Failed stillAlive test: ({}) - will retry later", res.status);
+                return true;
+            }
+
+            // Check error code
+            match res.status.as_str() {
+                "TERM_BAD_NETWORK" => {
+                    error!("Client is shutting down since the network is misconfigured; correct firewall/forwarding settings then restart the client.");
+                    return false; // Shutdown by RPC
+                },
+                "FAIL_NOT_LOGGED_IN" => {
+                    error!("The client session is invalid, shutting down.");
+                    return false;
+                },
+                _ => {
+                    warn!("Failed stillAlive test: ({}) - will retry later", res.status);
+                }
             }
         } else {
             warn!("Failed to connect to the server for the stillAlive test. This is probably a temporary connection problem.");
