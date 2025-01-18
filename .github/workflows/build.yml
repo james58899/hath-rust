@@ -33,7 +33,7 @@ env:
 
 jobs:
   build-linux:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-22.04-arm
     if: inputs.skip-linux != true
     strategy:
       fail-fast: false
@@ -41,10 +41,10 @@ jobs:
         target: ["x86_64-unknown-linux-gnu", "aarch64-unknown-linux-gnu", "armv7-unknown-linux-gnueabihf"]
     steps:
     - uses: actions/checkout@v4
-    - name: Install arm64 build tools
-      if: ${{ matrix.target == 'aarch64-unknown-linux-gnu' }}
+    - name: Install amd64 build tools
+      if: ${{ matrix.target == 'x86_64-unknown-linux-gnu' }}
       run: |
-        sudo apt-get update && sudo apt-get install -y crossbuild-essential-arm64
+        sudo apt-get update && sudo apt-get install -y crossbuild-essential-amd64
     - name: Install arm build tools
       if: ${{ matrix.target == 'armv7-unknown-linux-gnueabihf' }}
       run: |
@@ -64,6 +64,7 @@ jobs:
         rustup target add ${{ matrix.target }}
     - name: Build
       env:
+        CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER: "x86_64-linux-gnu-gcc"
         CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: "aarch64-linux-gnu-gcc"
         CARGO_TARGET_ARMV7_UNKNOWN_LINUX_GNUEABIHF_LINKER: "arm-linux-gnueabihf-gcc"
       run: cargo build --verbose --release --target=${{ matrix.target }}
@@ -72,7 +73,7 @@ jobs:
         name: hath-rust-${{ matrix.target }}
         path: target/${{ matrix.target }}/release/hath-rust
   build-linux-musl:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04-arm
     if: inputs.skip-linux-musl != true
     strategy:
       fail-fast: false
@@ -80,12 +81,17 @@ jobs:
         target: ["x86_64-unknown-linux-musl", "aarch64-unknown-linux-musl", "armv7-unknown-linux-musleabihf"]
     steps:
     - uses: actions/checkout@v4
-    - name: Install build tools
+    - name: Install LLVM
       run: |
         wget https://apt.llvm.org/llvm.sh
         chmod +x llvm.sh
-        sudo ./llvm.sh 18
-        sudo apt-get install -y crossbuild-essential-arm64 crossbuild-essential-armhf
+        sudo ./llvm.sh 19
+    - name: Install amd64 headers
+      if: ${{ matrix.target == 'x86_64-unknown-linux-musl' }}
+      run: sudo apt-get install -y libgcc-13-dev-amd64-cross
+    - name: Install arm headers
+      if: ${{ matrix.target == 'armv7-unknown-linux-musleabihf' }}
+      run: sudo apt-get install -y libgcc-13-dev-armhf-cross
     - uses: actions/cache@v4
       with:
         path: |
@@ -101,13 +107,13 @@ jobs:
         rustup target add ${{ matrix.target }}
     - name: Build
       env:
-        CC: clang-18
-        CXX: clang-18
-        CFLAGS: "-fuse-ld=lld-18"
-        CXXFLAGS: "-fuse-ld=lld-18"
-        CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_RUSTFLAGS: "-Clinker=clang-18 -Clink-arg=-fuse-ld=lld-18 -Clink-arg=--target=x86_64-unknown-linux-musl"
-        CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_RUSTFLAGS: "-Clinker=clang-18 -Clink-arg=-fuse-ld=lld-18 -Clink-arg=--target=aarch64-unknown-linux-musl"
-        CARGO_TARGET_ARMV7_UNKNOWN_LINUX_MUSLEABIHF_RUSTFLAGS: "-Clinker=clang-18 -Clink-arg=-fuse-ld=lld-18 -Clink-arg=--target=armv7-unknown-linux-musleabihf"
+        CC: clang-19
+        CXX: clang-19
+        CFLAGS: "-fuse-ld=lld-19"
+        CXXFLAGS: "-fuse-ld=lld-19"
+        CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_RUSTFLAGS: "-Clinker=clang-19 -Clink-arg=-fuse-ld=lld-19 -Clink-arg=--target=x86_64-unknown-linux-musl"
+        CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_RUSTFLAGS: "-Clinker=clang-19 -Clink-arg=-fuse-ld=lld-19 -Clink-arg=--target=aarch64-unknown-linux-musl"
+        CARGO_TARGET_ARMV7_UNKNOWN_LINUX_MUSLEABIHF_RUSTFLAGS: "-Clinker=clang-19 -Clink-arg=-fuse-ld=lld-19 -Clink-arg=--target=armv7-unknown-linux-musleabihf"
       run: cargo build --verbose --release --target=${{ matrix.target }}
     - uses: actions/upload-artifact@v4
       with:
