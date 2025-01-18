@@ -33,7 +33,7 @@ env:
 
 jobs:
   build-linux:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-22.04
     if: inputs.skip-linux != true
     strategy:
       fail-fast: false
@@ -41,9 +41,14 @@ jobs:
         target: ["x86_64-unknown-linux-gnu", "aarch64-unknown-linux-gnu", "armv7-unknown-linux-gnueabihf"]
     steps:
     - uses: actions/checkout@v4
-    - name: Install build tools
+    - name: Install arm64 build tools
+      if: ${{ matrix.target == 'aarch64-unknown-linux-gnu' }}
       run: |
-        sudo apt-get update && sudo apt-get install -y crossbuild-essential-arm64 crossbuild-essential-armhf
+        sudo apt-get update && sudo apt-get install -y crossbuild-essential-arm64
+    - name: Install arm build tools
+      if: ${{ matrix.target == 'armv7-unknown-linux-gnueabihf' }}
+      run: |
+        sudo apt-get update && sudo apt-get install -y crossbuild-essential-armhf
     - uses: actions/cache@v4
       with:
         path: |
