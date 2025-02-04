@@ -15,7 +15,10 @@ use crate::{route::forbidden, util::string_to_hash, AppState, MAX_KEY_TIME_DRIFT
 const BUFFER_SIZE: usize = 16384;
 
 // example: /t/5242880/1645930666/bce541b2a97788319e53a754b47e1801204ae7bf/43432228
-pub(super) async fn speedtest(Path((size, time, hash)): Path<(u64, i64, String)>, data: State<Arc<AppState>>) -> Response<Body> {
+pub(super) async fn speedtest(
+    Path((size, time, hash, _random)): Path<(u64, i64, String, String)>,
+    data: State<Arc<AppState>>,
+) -> Response<Body> {
     // Check time & hash
     let hash_string = format!("hentai@home-speedtest-{}-{}-{}-{}", size, time, data.rpc.id(), data.rpc.key());
     if !MAX_KEY_TIME_DRIFT.contains(&(data.rpc.get_timestemp() - time)) || string_to_hash(hash_string) != hash {
