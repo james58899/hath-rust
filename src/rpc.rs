@@ -383,11 +383,11 @@ The program will now terminate.
                 "TERM_BAD_NETWORK" => {
                     error!("Client is shutting down since the network is misconfigured; correct firewall/forwarding settings then restart the client.");
                     return false; // Shutdown by RPC
-                },
+                }
                 "FAIL_NOT_LOGGED_IN" => {
                     error!("The client session is invalid, shutting down.");
                     return false;
-                },
+                }
                 _ => {
                     warn!("Failed stillAlive test: ({}) - will retry later", res.status);
                 }
@@ -461,7 +461,7 @@ The program will now terminate.
                     return Ok(response);
                 }
                 Err(err) => {
-                    if err.is_connect() || err.is_timeout() || err.status().map_or(false, |s| s.is_server_error()) {
+                    if err.is_connect() || err.is_timeout() || err.status().is_some_and(|s| s.is_server_error()) {
                         self.change_server();
                     }
                     error = Box::new(err);
