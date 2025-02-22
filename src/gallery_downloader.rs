@@ -16,7 +16,7 @@ use tokio::{
     fs::{self, create_dir_all},
     io::{AsyncReadExt, AsyncWriteExt},
     sync::Semaphore,
-    time::{sleep, sleep_until, Instant},
+    time::{Instant, sleep, sleep_until},
 };
 use unicode_segmentation::UnicodeSegmentation;
 

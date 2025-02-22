@@ -4,21 +4,21 @@ mod logger;
 use std::{sync::Arc, time::Duration};
 
 use axum::{
+    Router,
     error_handling::HandleErrorLayer,
     http::{
-        header::{CONNECTION, SERVER},
         HeaderValue, StatusCode,
+        header::{CONNECTION, SERVER},
     },
     middleware,
     response::Response,
-    Router,
 };
 use const_format::concatcp;
-use tower::{timeout::TimeoutLayer, ServiceBuilder};
+use tower::{ServiceBuilder, timeout::TimeoutLayer};
 
 use crate::{
-    middleware::{connection_counter::ConnectionCounter, logger::Logger},
     AppState, CLIENT_VERSION,
+    middleware::{connection_counter::ConnectionCounter, logger::Logger},
 };
 
 static SERVER_HEADER: HeaderValue = HeaderValue::from_static(concatcp!("Genetic Lifeform and Distributed Open Server ", CLIENT_VERSION));

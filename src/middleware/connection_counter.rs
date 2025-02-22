@@ -1,8 +1,8 @@
 use std::{
     pin::Pin,
     sync::{
-        atomic::{AtomicU64, Ordering},
         Arc,
+        atomic::{AtomicU64, Ordering},
     },
     task::{Context, Poll},
 };
@@ -15,11 +15,11 @@ use axum::{
 use futures::future::BoxFuture;
 use http_body::{Frame, SizeHint};
 use pin_project_lite::pin_project;
-use scopeguard::{guard, ScopeGuard};
+use scopeguard::{ScopeGuard, guard};
 use tokio::sync::mpsc::Sender;
 use tower::{Layer, Service};
 
-use crate::{rpc::Settings, Command};
+use crate::{Command, rpc::Settings};
 
 #[derive(Clone)]
 pub(super) struct ConnectionCounter {

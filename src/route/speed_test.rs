@@ -8,9 +8,9 @@ use axum::{
     response::Response,
 };
 use bytes::{Bytes, BytesMut};
-use rand::{prelude::SmallRng, RngCore, SeedableRng};
+use rand::{RngCore, SeedableRng, prelude::SmallRng};
 
-use crate::{route::forbidden, util::string_to_hash, AppState, MAX_KEY_TIME_DRIFT};
+use crate::{AppState, MAX_KEY_TIME_DRIFT, route::forbidden, util::string_to_hash};
 
 const BUFFER_SIZE: usize = 16384;
 

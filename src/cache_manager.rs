@@ -5,8 +5,8 @@ use std::{
     io::Error,
     path::{Path, PathBuf},
     sync::{
-        atomic::{AtomicU64, Ordering::Relaxed},
         Arc,
+        atomic::{AtomicU64, Ordering::Relaxed},
     },
     time::{Duration, SystemTime},
 };
@@ -14,8 +14,8 @@ use std::{
 use async_stream::stream;
 use bytes::{Bytes, BytesMut};
 use filesize::{file_real_size, file_real_size_fast};
-use filetime::{set_file_mtime, FileTime};
-use futures::{stream, Stream, StreamExt, TryFutureExt, TryStreamExt};
+use filetime::{FileTime, set_file_mtime};
+use futures::{Stream, StreamExt, TryFutureExt, TryStreamExt, stream};
 use hex::FromHex;
 use log::{debug, error, info, warn};
 use mime::Mime;
@@ -24,12 +24,12 @@ use serde::{Deserialize, Serialize};
 use sha1::{Digest, Sha1};
 use tempfile::TempPath;
 use tokio::{
-    fs::{copy, create_dir_all, metadata, read_dir, remove_dir_all, remove_file, rename, DirEntry, File},
+    fs::{DirEntry, File, copy, create_dir_all, metadata, read_dir, remove_dir_all, remove_file, rename},
     io::{AsyncReadExt, AsyncWriteExt},
     spawn,
-    sync::mpsc::{channel, UnboundedSender},
+    sync::mpsc::{UnboundedSender, channel},
     task::spawn_blocking,
-    time::{sleep_until, Instant},
+    time::{Instant, sleep_until},
 };
 use tokio_stream::wrappers::ReadDirStream;
 use tokio_util::io::ReaderStream;
@@ -686,7 +686,7 @@ fn get_available_space(path: &Path) -> Option<u64> {
 
 #[cfg(windows)]
 fn get_available_space(path: &Path) -> Option<u64> {
-    use windows::{core::HSTRING, Win32::Storage::FileSystem::GetDiskFreeSpaceExW};
+    use windows::{Win32::Storage::FileSystem::GetDiskFreeSpaceExW, core::HSTRING};
 
     let full_path = path.canonicalize().ok()?;
     let mut free: u64 = 0;

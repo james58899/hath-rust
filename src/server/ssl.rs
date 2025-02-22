@@ -5,26 +5,26 @@ use std::{
 };
 
 use arc_swap::ArcSwap;
-use base64::{prelude::BASE64_STANDARD, Engine};
+use base64::{Engine, prelude::BASE64_STANDARD};
 use chrono::{DateTime, Utc};
 use log::{debug, warn};
 use p12::PFX;
 use reqwest::Url;
 use rustls::{
+    ServerConfig,
     crypto::ring::Ticketer,
     pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer},
     server::{ClientHello, NoServerSessionStorage, ResolvesServerCert},
     sign::CertifiedKey,
-    ServerConfig,
 };
 use sha1::Sha1;
-use tokio::time::{sleep_until, Instant};
+use tokio::time::{Instant, sleep_until};
 use x509_cert::{
-    der::{oid::db::rfc5912::ID_AD_OCSP, Decode, Encode},
-    ext::pkix::{name::GeneralName, AccessDescription, AuthorityInfoAccessSyntax},
     Certificate,
+    der::{Decode, Encode, oid::db::rfc5912::ID_AD_OCSP},
+    ext::pkix::{AccessDescription, AuthorityInfoAccessSyntax, name::GeneralName},
 };
-use x509_ocsp::{builder::OcspRequestBuilder, BasicOcspResponse, CertStatus, OcspResponse, OcspResponseStatus, Request};
+use x509_ocsp::{BasicOcspResponse, CertStatus, OcspResponse, OcspResponseStatus, Request, builder::OcspRequestBuilder};
 
 use crate::util::{aes_support, ssl_provider};
 
@@ -136,7 +136,7 @@ async fn fetch_ocsp(full_chain: &ParsedCert) -> Option<(Vec<u8>, DateTime<Utc>)>
     }
 
     // Extract OCSP URL
-    let aia: Vec<AccessDescription> = cert.tbs_certificate.get::<AuthorityInfoAccessSyntax>().ok().flatten()?.1 .0;
+    let aia: Vec<AccessDescription> = cert.tbs_certificate.get::<AuthorityInfoAccessSyntax>().ok().flatten()?.1.0;
     let mut url = match aia.iter().find(|aia| aia.access_method == ID_AD_OCSP)?.access_location.clone() {
         GeneralName::UniformResourceIdentifier(url) => Url::parse(url.as_str()).ok()?,
         _ => return None,

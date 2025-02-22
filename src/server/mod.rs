@@ -2,14 +2,14 @@ use std::{
     net::SocketAddr,
     ops::Deref,
     sync::{
-        atomic::{AtomicBool, Ordering},
         Arc,
+        atomic::{AtomicBool, Ordering},
     },
     time::Duration,
 };
 
 use arc_swap::ArcSwap;
-use axum::{extract::FromRequestParts, http::request::Parts, Extension, Router};
+use axum::{Extension, Router, extract::FromRequestParts, http::request::Parts};
 use futures::pin_mut;
 use hyper::server::conn::http1;
 use hyper_util::rt::{TokioIo, TokioTimer};
@@ -18,14 +18,14 @@ use rustls::ServerConfig;
 use ssl::ParsedCert;
 use tokio::{
     net::{TcpListener, TcpSocket, TcpStream},
-    sync::{watch, Notify},
+    sync::{Notify, watch},
     task::JoinHandle,
     time::timeout,
 };
 use tokio_rustls::TlsAcceptor;
 use tower::{Layer, Service};
 
-use crate::{middleware, route, server::ssl::create_ssl_config, AppState};
+use crate::{AppState, middleware, route, server::ssl::create_ssl_config};
 
 pub mod ssl;
 

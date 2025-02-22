@@ -6,8 +6,8 @@ use std::{collections::HashMap, error::Error, ops::RangeInclusive, path::Path, s
 use clap::Parser;
 use futures::TryFutureExt;
 use inquire::{
-    validator::{ErrorMessage, Validation},
     CustomType, Text,
+    validator::{ErrorMessage, Validation},
 };
 use log::{error, info, warn};
 use parking_lot::Mutex;
@@ -15,15 +15,15 @@ use regex_lite::Regex;
 use reqwest::Proxy;
 use tempfile::TempPath;
 use tokio::{
-    fs::{self, try_exists, File},
-    io::{stderr, stdin, AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader},
+    fs::{self, File, try_exists},
+    io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader, stderr, stdin},
     runtime::Handle,
     signal,
     sync::{
         mpsc::{self, Sender, UnboundedReceiver},
         watch,
     },
-    time::{sleep, sleep_until, Instant},
+    time::{Instant, sleep, sleep_until},
 };
 
 use crate::{
@@ -413,7 +413,7 @@ After registering, enter your ID and Key below to start your client.
 
 #[cfg(unix)]
 async fn wait_shutdown_signal(mut shutdown_channel: UnboundedReceiver<()>) {
-    use tokio::signal::unix::{signal, SignalKind};
+    use tokio::signal::unix::{SignalKind, signal};
 
     let mut sigterm = signal(SignalKind::terminate()).unwrap();
     tokio::select! {
@@ -453,8 +453,8 @@ fn build_tray_icon() {
         platform::windows::EventLoopBuilderExtWindows,
     };
     use tray_icon::{
-        menu::{Menu, MenuEvent},
         MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent,
+        menu::{Menu, MenuEvent},
     };
 
     // Show console
@@ -502,7 +502,7 @@ fn build_tray_icon() {
 fn switch_window(hide: bool) {
     use windows::Win32::{
         System::Console::{AllocConsole, GetConsoleWindow},
-        UI::WindowsAndMessaging::{DeleteMenu, GetSystemMenu, ShowWindow, MF_BYCOMMAND, SC_CLOSE, SW_HIDE, SW_SHOW},
+        UI::WindowsAndMessaging::{DeleteMenu, GetSystemMenu, MF_BYCOMMAND, SC_CLOSE, SW_HIDE, SW_SHOW, ShowWindow},
     };
 
     let mut window = unsafe { GetConsoleWindow() };

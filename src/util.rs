@@ -4,12 +4,12 @@ use const_format::concatcp;
 use futures::future::try_join_all;
 use reqwest::Proxy;
 use rustls::{
+    ClientConfig, RootCertStore,
     compress::CompressionCache,
     crypto::{
-        ring::{self, cipher_suite},
         CryptoProvider,
+        ring::{self, cipher_suite},
     },
-    ClientConfig, RootCertStore,
 };
 use sha1::{Digest, Sha1};
 use tokio::fs::create_dir_all;

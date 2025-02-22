@@ -1,16 +1,16 @@
 use std::{collections::HashMap, sync::Arc};
 
 use axum::{
+    Router,
     body::Body,
-    http::{header::LOCATION, Response, StatusCode},
+    http::{Response, StatusCode, header::LOCATION},
     response::{Html, IntoResponse},
     routing::get,
-    Router,
 };
 
 use crate::{
-    route::{cache::hath, server_command::servercmd, speed_test::speedtest},
     AppState,
+    route::{cache::hath, server_command::servercmd, speed_test::speedtest},
 };
 
 mod cache;

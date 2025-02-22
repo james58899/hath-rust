@@ -4,18 +4,18 @@ use std::{
     net::IpAddr,
     str::FromStr,
     sync::{
-        atomic::{AtomicBool, AtomicI64, AtomicU64, Ordering},
         Arc,
+        atomic::{AtomicBool, AtomicI64, AtomicU64, Ordering},
     },
     time::{Duration, Instant},
     vec,
 };
 
 use chrono::{TimeDelta, TimeZone, Utc};
-use futures::{executor::block_on, TryFutureExt};
+use futures::{TryFutureExt, executor::block_on};
 use log::{debug, error, info, warn};
 use parking_lot::{RwLock, RwLockUpgradableReadGuard};
-use rand::{rngs::SmallRng, seq::IndexedRandom, SeedableRng};
+use rand::{SeedableRng, rngs::SmallRng, seq::IndexedRandom};
 use reqwest::{IntoUrl, Url};
 
 use crate::{
@@ -381,7 +381,9 @@ The program will now terminate.
             // Check error code
             match res.status.as_str() {
                 "TERM_BAD_NETWORK" => {
-                    error!("Client is shutting down since the network is misconfigured; correct firewall/forwarding settings then restart the client.");
+                    error!(
+                        "Client is shutting down since the network is misconfigured; correct firewall/forwarding settings then restart the client."
+                    );
                     return false; // Shutdown by RPC
                 }
                 "FAIL_NOT_LOGGED_IN" => {

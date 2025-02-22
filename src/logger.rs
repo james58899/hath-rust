@@ -1,21 +1,21 @@
 use std::{
     path::{Path, PathBuf},
     sync::{
-        atomic::{AtomicBool, AtomicU8, Ordering},
         Arc,
+        atomic::{AtomicBool, AtomicU8, Ordering},
     },
 };
 
 use chrono::{SecondsFormat, Utc};
 use futures::executor::block_on;
-use log::{info, Level, LevelFilter, Metadata, Record, SetLoggerError};
+use log::{Level, LevelFilter, Metadata, Record, SetLoggerError, info};
 use tokio::{
-    fs::{rename, try_exists, File},
-    io::{stderr, stdout, AsyncWriteExt, BufWriter},
+    fs::{File, rename, try_exists},
+    io::{AsyncWriteExt, BufWriter, stderr, stdout},
     select,
     sync::{
-        mpsc::{unbounded_channel, UnboundedSender},
         Notify,
+        mpsc::{UnboundedSender, unbounded_channel},
     },
     task::JoinHandle,
 };

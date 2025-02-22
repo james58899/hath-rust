@@ -2,8 +2,8 @@ use std::{
     cmp::max,
     pin::Pin,
     sync::{
-        atomic::{AtomicU64, Ordering},
         Arc,
+        atomic::{AtomicU64, Ordering},
     },
     task::{Context, Poll},
     time::Instant,
@@ -12,7 +12,7 @@ use std::{
 use axum::{
     body::{Body, HttpBody},
     extract::Request,
-    http::{header::CONTENT_LENGTH, HeaderValue, Method},
+    http::{HeaderValue, Method, header::CONTENT_LENGTH},
     response::Response,
 };
 use futures::future::BoxFuture;

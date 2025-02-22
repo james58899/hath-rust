@@ -11,17 +11,17 @@ use axum::{
 };
 use futures::TryStreamExt;
 use log::debug;
-use rand::{prelude::SmallRng, Rng, SeedableRng};
+use rand::{Rng, SeedableRng, prelude::SmallRng};
 use reqwest::{
-    header::{HeaderValue, CONNECTION},
     Url,
+    header::{CONNECTION, HeaderValue},
 };
 
 use crate::{
+    AppState, Command, MAX_KEY_TIME_DRIFT,
     route::{forbidden, parse_additional, speed_test::random_response},
     server::ClientAddr,
     util::{create_http_client, string_to_hash},
-    AppState, Command, MAX_KEY_TIME_DRIFT,
 };
 
 pub(super) async fn servercmd(
