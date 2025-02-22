@@ -62,9 +62,9 @@ sha1 = { version = "0.10.6", default-features = false, features = ["asm", "oid"]
 
 [target.'cfg(windows)'.dependencies]
 sha1 = { version = "0.10.6", default-features = false, features = ["oid"] } # sha1-asm not support windows
-tray-icon = { version = "0.19.1", default-features = false }
-windows = { version = "0.58.0", features = ["Win32_Foundation", "Win32_System_Console", "Win32_UI_WindowsAndMessaging", "Win32_Storage_FileSystem"] }
-tao = "0.31.0"
+tray-icon = { version = "0.20.0", default-features = false }
+windows = { version = "0.60.0", features = ["Win32_Foundation", "Win32_System_Console", "Win32_UI_WindowsAndMessaging", "Win32_Storage_FileSystem"] }
+tao = "0.32.0"
 
 [build-dependencies]
 vergen-gix = "1.0"
