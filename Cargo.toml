@@ -28,7 +28,7 @@ mime = "0.3"
 p12 = "0.6.3"
 parking_lot = { version = "0.12", features = ["hardware-lock-elision"] }
 pin-project-lite = "0.2"
-rand = { version = "0.8", default-features = false, features = ["alloc", "getrandom", "small_rng"] }
+rand = { version = "0.9.0", default-features = false, features = ["alloc", "os_rng", "small_rng"] }
 regex-lite = "0.1.6"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "stream", "socks"] }
 rmp-serde = "1.3.0"

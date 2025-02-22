@@ -33,7 +33,7 @@ pub(super) fn random_response(size: u64) -> Response<Body> {
         .header(CONTENT_LENGTH, size)
         .body(Body::from_stream(stream! {
             let mut buffer = BytesMut::zeroed(BUFFER_SIZE);
-            SmallRng::from_entropy().fill_bytes(&mut buffer);
+            SmallRng::from_os_rng().fill_bytes(&mut buffer);
             let buffer = buffer.freeze();
 
             let mut filled = 0;
