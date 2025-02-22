@@ -164,7 +164,7 @@ impl CacheManager {
         .unwrap()
     }
 
-    pub async fn get_file(self: &Arc<Self>, info: &CacheFileInfo) -> Option<impl Stream<Item = Result<Bytes, Error>>> {
+    pub async fn get_file(self: &Arc<Self>, info: &CacheFileInfo) -> Option<impl Stream<Item = Result<Bytes, Error>> + use<>> {
         let path = info.to_path(&self.cache_dir);
 
         // Check exists and open file
