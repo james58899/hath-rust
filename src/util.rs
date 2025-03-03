@@ -8,7 +8,7 @@ use rustls::{
     compress::CompressionCache,
     crypto::{
         CryptoProvider,
-        ring::{self, cipher_suite},
+        aws_lc_rs::{self, cipher_suite},
     },
 };
 use sha1::{Digest, Sha1};
@@ -66,7 +66,7 @@ pub fn aes_support() -> bool {
 }
 
 pub fn ssl_provider() -> CryptoProvider {
-    let mut provider = ring::default_provider();
+    let mut provider = aws_lc_rs::default_provider();
     // Prefer ChaCha20 when AES acceleration is not available.
     provider.cipher_suites = if aes_support() {
         vec![

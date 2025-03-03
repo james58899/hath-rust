@@ -13,7 +13,7 @@ use reqwest::Url;
 use rustls::{
     ServerConfig,
     compress::CompressionCache,
-    crypto::ring::Ticketer,
+    crypto::aws_lc_rs::Ticketer,
     pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer},
     server::{ClientHello, NoServerSessionStorage, ResolvesServerCert},
     sign::CertifiedKey,
@@ -27,7 +27,7 @@ use x509_cert::{
 };
 use x509_ocsp::{BasicOcspResponse, CertStatus, OcspResponse, OcspResponseStatus, Request, builder::OcspRequestBuilder};
 
-use crate::util::{aes_support, ssl_provider};
+use crate::util::{aes_support, create_http_client, ssl_provider};
 
 pub struct ParsedCert {
     certs: Vec<CertificateDer<'static>>,
@@ -156,7 +156,8 @@ async fn fetch_ocsp(full_chain: &ParsedCert) -> Option<(Vec<u8>, DateTime<Utc>)>
     url.path_segments_mut().unwrap().push(&BASE64_STANDARD.encode(ocsp_request));
 
     // Check response
-    let res = reqwest::get(url).await.ok()?.bytes().await.ok()?;
+    let request = create_http_client(Duration::from_secs(30), None).get(url);
+    let res = request.send().await.ok()?.bytes().await.ok()?;
     let ocsp = OcspResponse::from_der(&res).ok()?;
     if ocsp.response_status == OcspResponseStatus::Successful && ocsp.response_bytes.is_some() {
         let response = BasicOcspResponse::from_der(ocsp.response_bytes.unwrap().response.as_bytes())
