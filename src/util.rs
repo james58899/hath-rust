@@ -27,7 +27,7 @@ pub fn create_http_client(timeout: Duration, proxy: Option<Proxy>) -> reqwest::C
         .unwrap()
         .with_root_certificates(root_store)
         .with_no_client_auth();
-    tls.cert_compression_cache = CompressionCache::new(2).into(); // 1 cert * 2 compression algorithms
+    tls.cert_compression_cache = CompressionCache::Disabled.into(); // Client does not send certificate
 
     let mut builder = reqwest::ClientBuilder::new()
         .user_agent(concatcp!("Hentai@Home ", CLIENT_VERSION))

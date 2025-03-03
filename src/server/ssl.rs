@@ -12,6 +12,7 @@ use p12::PFX;
 use reqwest::Url;
 use rustls::{
     ServerConfig,
+    compress::CompressionCache,
     crypto::ring::Ticketer,
     pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer},
     server::{ClientHello, NoServerSessionStorage, ResolvesServerCert},
@@ -101,6 +102,7 @@ pub fn create_ssl_config(cert: ParsedCert) -> ServerConfig {
     config.session_storage = Arc::new(NoServerSessionStorage {});
     config.ticketer = Ticketer::new().unwrap();
     config.send_tls13_tickets = 1;
+    config.cert_compression_cache = CompressionCache::new(2).into(); // 1 cert * 2 compression algorithms
 
     // OCSP worker
     tokio::spawn(async move {
