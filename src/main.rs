@@ -37,6 +37,7 @@ use crate::{
 
 mod cache_manager;
 mod error;
+mod file_reader;
 mod gallery_downloader;
 mod logger;
 mod middleware;
