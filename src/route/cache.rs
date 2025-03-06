@@ -18,7 +18,7 @@ use tokio::{
     fs::{File, OpenOptions},
     io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt},
     sync::watch,
-    time::timeout,
+    time::{sleep, timeout},
 };
 
 use crate::{
@@ -221,6 +221,11 @@ pub(super) async fn hath(
                 while write_off > read_off {
                     buffer.reserve(64*1024);
                     match file.read_buf(&mut buffer).await {
+                        Ok(0) => {
+                            // Data may not synced to disk, retry later
+                            sleep(Duration::from_millis(10)).await;
+                            continue;
+                        }
                         Ok(s) => read_off += s as u64,
                         Err(err) => yield Err(err)
                     }
