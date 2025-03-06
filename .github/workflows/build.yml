@@ -2,7 +2,7 @@ name: Build
 
 on:
   push:
-    branches: [ "main", "dev" ]
+    branches-ignore: [ "dependabot/**" ]
   pull_request:
     branches: [ "main" ]
   workflow_call:
