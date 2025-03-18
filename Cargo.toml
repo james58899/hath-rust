@@ -57,7 +57,7 @@ tikv-jemallocator = { version = "0.6", features = ["background_threads", "unpref
 tikv-jemallocator = { version = "0.6" } # jemalloc not support background threads and unprefix on macos
 
 [target.'cfg(unix)'.dependencies]
-rustix = { version = "0.38.34", features = ["fs"] }
+rustix = { version = "1.0", features = ["fs"] }
 sha1 = { version = "0.10.6", default-features = false, features = ["asm", "oid"] }
 
 [target.'cfg(windows)'.dependencies]
