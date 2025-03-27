@@ -8,7 +8,6 @@ build = "build.rs"
 arc-swap = "1.7"
 async-stream = "0.3"
 axum = { version = "0.8", default-features = false, features = ["http1", "matched-path"] }
-base64 = "0.22.1"
 bytes = "1.9.0"
 chrono = { version = "0.4", default-features = false, features = [ "now" ] }
 clap = { version = "4.5", features = ["derive", "wrap_help"] }
@@ -43,8 +42,6 @@ tokio-util = { version = "0.7.13", features = ["io"] }
 tower = { version = "0.5.1", features = ["timeout"] }
 unicode-segmentation = "1.12.0"
 webpki-roots = "0.26.7"
-x509-cert = { version = "0.2.5", default-features = false }
-x509-ocsp = { version = "0.2.1", features = ["builder"] }
 
 # cpufeatures not support all platforms
 [target.'cfg(any(target_arch = "x86", target_arch = "x86_64", target_arch = "aarch64"))'.dependencies]
