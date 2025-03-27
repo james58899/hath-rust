@@ -21,7 +21,7 @@ use reqwest::{IntoUrl, Url};
 use crate::{
     error::Error,
     gallery_downloader::GalleryMeta,
-    server::ssl::ParsedCert,
+    server::ParsedCert,
     util::{create_http_client, string_to_hash},
 };
 
