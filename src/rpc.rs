@@ -449,8 +449,7 @@ The program will now terminate.
     async fn send_action(&self, action: &str, additional: Option<&str>) -> Result<ApiResponse, RequestError> {
         let additional = additional.unwrap_or("");
         let mut error: RequestError = Box::new(Error::connection_error("Failed to connect to server."));
-        let mut retry = 3;
-        while retry > 0 {
+        for _ in 0..3 {
             match self.send_request(self.build_url(action, additional, None)).await {
                 Ok(body) => {
                     debug!("Received response: {}", body);
@@ -469,7 +468,6 @@ The program will now terminate.
                     error = Box::new(err);
                 }
             }
-            retry -= 1;
         }
 
         Err(error)
