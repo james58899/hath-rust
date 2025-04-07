@@ -7,6 +7,7 @@ build = "build.rs"
 [dependencies]
 arc-swap = "1.7"
 async-stream = "0.3"
+aws-lc-rs = { version = "1.12", default-features = false }
 axum = { version = "0.8", default-features = false, features = ["http1", "matched-path"] }
 bytes = "1.9.0"
 chrono = { version = "0.4", default-features = false, features = [ "now" ] }
@@ -55,10 +56,8 @@ tikv-jemallocator = { version = "0.6" } # jemalloc not support background thread
 
 [target.'cfg(unix)'.dependencies]
 rustix = { version = "1.0", features = ["fs"] }
-sha1 = { version = "0.10.6", default-features = false, features = ["asm", "oid"] }
 
 [target.'cfg(windows)'.dependencies]
-sha1 = { version = "0.10.6", default-features = false, features = ["oid"] } # sha1-asm not support windows
 tray-icon = { version = "0.20.0", default-features = false }
 windows = { version = "0.60.0", features = ["Win32_Foundation", "Win32_System_Console", "Win32_UI_WindowsAndMessaging", "Win32_Storage_FileSystem"] }
 tao = "0.32.0"

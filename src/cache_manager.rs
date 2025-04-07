@@ -12,6 +12,7 @@ use std::{
 };
 
 use async_stream::stream;
+use aws_lc_rs::digest;
 use bytes::Bytes;
 use filesize::{file_real_size, file_real_size_fast};
 use filetime::{FileTime, set_file_mtime};
@@ -21,7 +22,6 @@ use log::{debug, error, info, warn};
 use mime::Mime;
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
-use sha1::{Digest, Sha1};
 use tempfile::TempPath;
 use tokio::{
     fs::{DirEntry, File, copy, create_dir_all, metadata, read_dir, remove_dir_all, remove_file, rename},
@@ -212,7 +212,7 @@ impl CacheManager {
         tokio::spawn(async move {
             let file_size = metadata.len();
             let mut read_off = 0;
-            let mut hasher = Sha1::new();
+            let mut hasher = digest::Context::new(&digest::SHA1_FOR_LEGACY_USE_ONLY);
 
             while read_off < file_size {
                 let buffer = match file_reader.read().await {
@@ -228,8 +228,8 @@ impl CacheManager {
                 let _ = tx.send(Ok(buffer)).await;
             }
 
-            let hash: [u8; 20] = hasher.finalize().into();
-            if hash != info.hash() {
+            let hash = hasher.finish();
+            if hash.as_ref() != info.hash() {
                 warn!("Detected corrupt cache file: path={:?}, hash={:x?}, actual={:x?}", &path, info.hash(), hash);
                 cache_manager.remove_cache(&info).await;
             }
@@ -450,7 +450,7 @@ impl CacheManager {
                                 return;
                             }
                         };
-                        let mut hasher = Sha1::new();
+                        let mut hasher = digest::Context::new(&digest::SHA1_FOR_LEGACY_USE_ONLY);
                         let mut buf = vec![0; 1024 * 1024]; // 1MiB
                         loop {
                             match file.read(&mut buf).await {
@@ -466,8 +466,8 @@ impl CacheManager {
                                 }
                             }
                         }
-                        let actual_hash: [u8; 20] = hasher.finalize().into();
-                        if actual_hash != info.hash {
+                        let actual_hash = hasher.finish();
+                        if actual_hash.as_ref() != info.hash {
                             warn!("Delete corrupt cache file: path={:?}, hash={:x?}, actual={:x?}", path, &info.hash, &actual_hash);
                             if let Err(err) = remove_file(&path).await {
                                 error!("Delete corrupt cache file error: path={:?}, err={}", path, err);

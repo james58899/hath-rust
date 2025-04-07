@@ -1,5 +1,6 @@
 use std::time::Duration;
 
+use aws_lc_rs::digest;
 use const_format::concatcp;
 use futures::future::try_join_all;
 use reqwest::Proxy;
@@ -8,16 +9,15 @@ use rustls::{
     compress::CompressionCache,
     crypto::{
         CryptoProvider,
-        aws_lc_rs::{self, cipher_suite},
+        aws_lc_rs::{cipher_suite, default_provider},
     },
 };
-use sha1::{Digest, Sha1};
 use tokio::fs::create_dir_all;
 
 use crate::CLIENT_VERSION;
 
 pub fn string_to_hash(str: String) -> String {
-    hex::encode(Sha1::digest(str.as_bytes()))
+    hex::encode(digest::digest(&digest::SHA1_FOR_LEGACY_USE_ONLY, str.as_bytes()))
 }
 
 pub fn create_http_client(timeout: Duration, proxy: Option<Proxy>) -> reqwest::Client {
@@ -66,7 +66,7 @@ pub fn aes_support() -> bool {
 }
 
 pub fn ssl_provider() -> CryptoProvider {
-    let mut provider = aws_lc_rs::default_provider();
+    let mut provider = default_provider();
     // Prefer ChaCha20 when AES acceleration is not available.
     provider.cipher_suites = if aes_support() {
         vec![

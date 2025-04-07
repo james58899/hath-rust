@@ -1,6 +1,7 @@
 use std::{io::SeekFrom, ops::RangeInclusive, sync::Arc, time::Duration};
 
 use async_stream::stream;
+use aws_lc_rs::digest;
 use axum::{
     body::Body,
     extract::{Path, State},
@@ -13,7 +14,6 @@ use axum::{
 use bytes::BytesMut;
 use futures::StreamExt;
 use log::error;
-use sha1::{Digest, Sha1};
 use tokio::{
     fs::{File, OpenOptions},
     io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt},
@@ -112,7 +112,7 @@ pub(super) async fn hath(
         let info2 = info.clone();
         let temp_path2 = temp_path.clone();
         data.runtime.clone().spawn(async move {
-            let mut hasher = Sha1::new();
+            let mut hasher = digest::Context::new(&digest::SHA1_FOR_LEGACY_USE_ONLY);
             let mut progress = 0;
             let mut reqwest = data.reqwest.clone();
             let mut sources = sources.iter().cycle();
@@ -176,11 +176,11 @@ pub(super) async fn hath(
                             error!("Proxy temp file flush fail: {}", err);
                             break 'retry;
                         }
-                        let hash: [u8; 20] = hasher.finalize().into();
+                        let hash = hasher.finish();
                         tx2.send_replace(progress);
                         tx2.closed().await; // Wait all request done
                         data.download_state.lock().remove(&info2.hash());
-                        if hash == info2.hash() {
+                        if hash.as_ref() == info2.hash() {
                             tx2.closed().await; // Wait again to avoid race conditions
                             data.cache_manager.import_cache(&info2, &temp_path2).await;
                         } else {

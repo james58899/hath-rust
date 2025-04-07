@@ -5,13 +5,13 @@ use std::{
     time::Duration,
 };
 
+use aws_lc_rs::digest;
 use futures::StreamExt;
 use hex::FromHex;
 use log::{debug, error, info, warn};
 use parking_lot::Mutex;
 use regex_lite::Regex;
 use reqwest::{Proxy, Url};
-use sha1::{Digest, Sha1};
 use tokio::{
     fs::{self, create_dir_all},
     io::{AsyncReadExt, AsyncWriteExt},
@@ -300,7 +300,7 @@ async fn download<P: AsRef<Path>>(reqwest: reqwest::Client, url: Url, path: P, h
         .await
         .and_then(|r| r.error_for_status())
         .map(|r| r.bytes_stream())?;
-    let mut hasher = Sha1::new();
+    let mut hasher = digest::Context::new(&digest::SHA1_FOR_LEGACY_USE_ONLY);
     while let Some(bytes) = stream.next().await {
         let bytes = &bytes?;
         file.write_all(bytes).await?;
@@ -308,9 +308,12 @@ async fn download<P: AsRef<Path>>(reqwest: reqwest::Client, url: Url, path: P, h
     }
 
     if let Some(expected) = hash {
-        let hash = hasher.finalize().into();
-        if hash != expected {
-            return Err(Box::new(Error::HashMismatch { expected, actual: hash }));
+        let hash = hasher.finish();
+        if hash.as_ref() != expected {
+            return Err(Box::new(Error::HashMismatch {
+                expected,
+                actual: hash.as_ref().try_into().unwrap(),
+            }));
         }
     }
 
@@ -341,7 +344,7 @@ impl GalleryFile {
         // Check hash
         if let Ok(mut file) = fs::File::open(&path).await {
             let mut buf = vec![0; 1024 * 1024]; // 1MiB
-            let mut hasher = Sha1::new();
+            let mut hasher = digest::Context::new(&digest::SHA1_FOR_LEGACY_USE_ONLY);
             loop {
                 if let Ok(n) = file.read(&mut buf).await {
                     if n == 0 {
@@ -350,8 +353,8 @@ impl GalleryFile {
                     hasher.update(&buf[0..n]);
                 }
             }
-            let hash: [u8; 20] = hasher.finalize().into();
-            if hash == self.expected_sha1_hash.unwrap() {
+            let hash = hasher.finish();
+            if hash.as_ref() == self.expected_sha1_hash.unwrap() {
                 return true;
             }
         }
