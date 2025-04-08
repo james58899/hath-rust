@@ -8,7 +8,6 @@ use axum::{
     response::Response,
 };
 use bytes::{Bytes, BytesMut};
-use rand::{RngCore, SeedableRng, prelude::SmallRng};
 
 use crate::{AppState, MAX_KEY_TIME_DRIFT, route::forbidden, util::string_to_hash};
 
@@ -33,7 +32,7 @@ pub(super) fn random_response(size: u64) -> Response<Body> {
         .header(CONTENT_LENGTH, size)
         .body(Body::from_stream(stream! {
             let mut buffer = BytesMut::zeroed(BUFFER_SIZE);
-            SmallRng::from_os_rng().fill_bytes(&mut buffer);
+            fastrand::fill(&mut buffer);
             let buffer = buffer.freeze();
 
             let mut filled = 0;
