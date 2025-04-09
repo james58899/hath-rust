@@ -14,10 +14,10 @@ use std::{
 use async_stream::stream;
 use aws_lc_rs::digest;
 use bytes::Bytes;
+use const_hex::decode_to_array;
 use filesize::{file_real_size, file_real_size_fast};
 use filetime::{FileTime, set_file_mtime};
 use futures::{Stream, StreamExt, TryFutureExt, TryStreamExt, stream};
-use hex::FromHex;
 use log::{debug, error, info, warn};
 use mime::Mime;
 use parking_lot::Mutex;
@@ -820,7 +820,7 @@ impl CacheFileInfo {
         let none_res = part.clone().count() == 3;
 
         Some(CacheFileInfo {
-            hash: <[u8; 20]>::from_hex(part.next()?).ok()?,
+            hash: decode_to_array(part.next()?).ok()?,
             size: part.next().and_then(|s| s.parse().ok())?,
             xres: if none_res { 0 } else { part.next().and_then(|s| s.parse().ok())? },
             yres: if none_res { 0 } else { part.next().and_then(|s| s.parse().ok())? },
@@ -838,7 +838,7 @@ impl CacheFileInfo {
     }
 
     fn to_path(&self, cache_dir: &Path) -> PathBuf {
-        let hash = hex::encode(self.hash);
+        let hash = const_hex::encode(self.hash);
         let filename = if self.xres > 0 {
             format!("{}-{}-{}-{}-{}", hash, self.size, self.xres, self.yres, self.mime_type)
         } else {
@@ -854,7 +854,7 @@ impl CacheFileInfo {
     }
 
     fn static_range(&self) -> String {
-        hex::encode(&self.hash[0..2])
+        const_hex::encode(&self.hash[0..2])
     }
 
     pub fn mime_type(&self) -> Mime {

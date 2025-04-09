@@ -6,8 +6,8 @@ use std::{
 };
 
 use aws_lc_rs::digest;
+use const_hex::decode_to_array;
 use futures::StreamExt;
-use hex::FromHex;
 use log::{debug, error, info, warn};
 use parking_lot::Mutex;
 use regex_lite::Regex;
@@ -259,7 +259,7 @@ impl GalleryDownloader {
                 let xres = split[2].to_string();
 
                 // sha1hash can be "unknown" if the file has not been generated yet
-                let sha1hash = <[u8; 20]>::from_hex(split[3]).ok();
+                let sha1hash = decode_to_array(split[3]).ok();
 
                 // the server guarantees that all filenames in the meta file are unique, and that none of them are reserved device filenames
                 let filetype = split[4].to_string();

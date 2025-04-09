@@ -17,7 +17,7 @@ use tokio::fs::create_dir_all;
 use crate::CLIENT_VERSION;
 
 pub fn string_to_hash(str: String) -> String {
-    hex::encode(digest::digest(&digest::SHA1_FOR_LEGACY_USE_ONLY, str.as_bytes()))
+    const_hex::encode(digest::digest(&digest::SHA1_FOR_LEGACY_USE_ONLY, str.as_bytes()))
 }
 
 pub fn create_http_client(timeout: Duration, proxy: Option<Proxy>) -> reqwest::Client {
