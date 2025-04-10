@@ -32,7 +32,7 @@ pin-project-lite = "0.2"
 regex-lite = "0.1.6"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls-manual-roots-no-provider", "stream", "socks"] }
 rmp-serde = "1.3.0"
-rustls = { version = "0.23.18", default-features = false, features = ["brotli", "aws_lc_rs", "std", "tls12", "zlib"] }
+rustls = { version = "0.23.26", default-features = false, features = ["brotli", "aws_lc_rs", "std", "tls12", "zlib"] }
 scopeguard = "1.2"
 serde = { version = "1.0.216", features = ["serde_derive"] }
 tempfile = "3.19.1"
@@ -64,6 +64,9 @@ tao = "0.32.0"
 
 [build-dependencies]
 vergen-gix = "1.0"
+
+[patch.crates-io]
+rustls = { git = "https://github.com/james58899/rustls.git", rev = "6038c999191e1295fff1f814b0f6a04289f3ab4e" }
 
 [profile.release]
 lto = true

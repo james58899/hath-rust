@@ -232,7 +232,8 @@ pub fn create_ssl_config(cert: ParsedCert) -> ServerConfig {
         .unwrap();
 
     // Prefer ChaCha20 on non-AES hardware.
-    config.ignore_client_order = !aes_support();
+    config.ignore_client_order = true;
+    config.prioritize_chacha = aes_support();
     // Only support ticket resumption.
     config.session_storage = Arc::new(NoServerSessionStorage {});
     config.ticketer = Ticketer::new().unwrap();

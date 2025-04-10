@@ -3170,9 +3170,8 @@ dependencies = [
 
 [[package]]
 name = "rustls"
-version = "0.23.25"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "822ee9188ac4ec04a2f0531e55d035fb2de73f18b41a63c70c2712503b6fb13c"
+version = "0.23.26"
+source = "git+https://github.com/james58899/rustls.git?rev=6038c999191e1295fff1f814b0f6a04289f3ab4e#6038c999191e1295fff1f814b0f6a04289f3ab4e"
 dependencies = [
  "aws-lc-rs",
  "brotli",
@@ -4634,6 +4633,6 @@ checksum = "ced3678a2879b30306d323f4542626697a464a97c0a07c9aebf7ebca65cd4dde"
 
 [[package]]
 name = "zlib-rs"
-version = "0.4.2"
+version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8b20717f0917c908dc63de2e44e97f1e6b126ca58d0e391cee86d504eb8fbd05"
+checksum = "868b928d7949e09af2f6086dfc1e01936064cc7a819253bce650d4e2a2d63ba8"
