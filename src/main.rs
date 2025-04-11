@@ -17,7 +17,6 @@ use tempfile::TempPath;
 use tokio::{
     fs::{self, File, try_exists},
     io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader, stderr, stdin},
-    runtime::Handle,
     signal,
     sync::{
         mpsc::{self, Sender, UnboundedReceiver},
@@ -127,7 +126,6 @@ struct Args {
 type DownloadState = Mutex<HashMap<[u8; 20], (watch::Receiver<Option<Arc<TempPath>>>, Arc<watch::Sender<u64>>)>>;
 
 pub struct AppState {
-    runtime: Handle,
     reqwest: reqwest::Client,
     rpc: Arc<RPCClient>,
     download_state: DownloadState,
@@ -214,7 +212,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     info!("Starting HTTP server...");
     let server = Server::new(args.port.unwrap_or_else(|| init_settings.client_port()), client.get_cert().await.unwrap(), AppState {
-        runtime: Handle::current(),
         reqwest: create_http_client(Duration::from_secs(30), proxy.clone()),
         rpc: client.clone(),
         download_state: Default::default(),

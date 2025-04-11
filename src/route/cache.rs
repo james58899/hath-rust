@@ -111,7 +111,7 @@ pub(super) async fn hath(
         let tx2: Arc<watch::Sender<u64>> = tx.clone();
         let info2 = info.clone();
         let temp_path2 = temp_path.clone();
-        data.runtime.clone().spawn(async move {
+        tokio::spawn(async move {
             let mut hasher = digest::Context::new(&digest::SHA1_FOR_LEGACY_USE_ONLY);
             let mut progress = 0;
             let mut reqwest = data.reqwest.clone();
