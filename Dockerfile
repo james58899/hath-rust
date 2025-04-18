@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-FROM --platform=linux/amd64 rust:bookworm AS builder
+FROM rust:bookworm AS builder
 
 WORKDIR /usr/src/myapp
 RUN --mount=type=bind,target=. --mount=type=cache,target=/root/.cargo cargo fetch
