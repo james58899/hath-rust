@@ -109,7 +109,7 @@ jobs:
         rustup update
         rustup target add ${{ matrix.target }}
     - name: Set Jemalloc page size to 64K for aarch64
-      if: ${{ matrix.target == 'aarch64-unknown-linux-gnu' }}
+      if: ${{ matrix.target == 'aarch64-unknown-linux-musl' }}
       run: echo "JEMALLOC_SYS_WITH_LG_PAGE=16" >> $GITHUB_ENV
     - name: Build
       env:
