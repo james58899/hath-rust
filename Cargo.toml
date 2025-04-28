@@ -2,6 +2,8 @@
 name = "hath-rust"
 version = "1.11.0"
 edition = "2024"
+description = "The unofficial Hentai@Home client written in Rust."
+license = "GPL-3.0-or-later"
 build = "build.rs"
 
 [dependencies]
@@ -64,6 +66,9 @@ tao = "0.33.0"
 
 [build-dependencies]
 vergen-gix = "1.0.9"
+
+[target.'cfg(windows)'.build-dependencies]
+tauri-winres = "0.3.1"
 
 [patch.crates-io]
 rustls = { git = "https://github.com/james58899/rustls.git", rev = "6038c999191e1295fff1f814b0f6a04289f3ab4e" }
