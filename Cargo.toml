@@ -42,7 +42,7 @@ tokio-stream = { version = "0.1", default-features = false, features = ["fs"] }
 tokio-util = { version = "0.7.13", features = ["io"] }
 tower = { version = "0.5.1", features = ["timeout"] }
 unicode-segmentation = "1.12.0"
-webpki-roots = "0.26.8"
+webpki-roots = "0.26.10"
 
 # cpufeatures not support all platforms
 [target.'cfg(any(target_arch = "x86", target_arch = "x86_64", target_arch = "aarch64"))'.dependencies]
