@@ -102,9 +102,13 @@ struct Args {
     #[arg(long, default_value_t = 0)]
     max_connection: u64,
 
-    /// Disable server command ip check
+    /// Disable server command ip check, also disable flood control
     #[arg(long, default_value_t = false)]
     disable_ip_origin_check: bool,
+
+    /// Disable flood control
+    #[arg(long, default_value_t = false)]
+    disable_flood_control: bool,
 
     /// Configure proxy for fetch cache
     #[arg(long)]
@@ -211,14 +215,18 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let (tx, mut rx) = mpsc::channel::<Command>(1);
 
     info!("Starting HTTP server...");
-    let server = Server::new(args.port.unwrap_or_else(|| init_settings.client_port()), client.get_cert().await.unwrap(), AppState {
+    let port = args.port.unwrap_or_else(|| init_settings.client_port());
+    let cert = client.get_cert().await.expect("Failed to get server certificate");
+    let state = AppState {
         reqwest: create_http_client(Duration::from_secs(30), proxy.clone()),
         rpc: client.clone(),
         download_state: Default::default(),
         cache_manager: cache_manager.clone(),
         command_channel: tx.clone(),
         has_proxy: proxy.is_some(),
-    });
+    };
+    let flood_control = !(args.disable_flood_control || args.disable_ip_origin_check);
+    let server = Server::new(port, cert, state, flood_control);
     let server_handle = server.handle();
 
     info!("Notifying the server that we have finished starting up the client...");

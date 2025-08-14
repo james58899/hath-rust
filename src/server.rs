@@ -1,11 +1,13 @@
 use std::{
-    net::SocketAddr,
+    cmp::min,
+    collections::HashMap,
+    net::{IpAddr, SocketAddr},
     ops::Deref,
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
     },
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use arc_swap::ArcSwap;
@@ -13,7 +15,7 @@ use axum::{Extension, Router, extract::FromRequestParts, http::request::Parts};
 use futures::pin_mut;
 use hyper::server::conn::http1;
 use hyper_util::rt::{TokioIo, TokioTimer};
-use log::info;
+use log::{info, warn};
 use p12::PFX;
 use rustls::{
     ServerConfig,
@@ -48,7 +50,7 @@ pub struct ServerHandle {
 }
 
 impl Server {
-    pub fn new(port: u16, cert: ParsedCert, data: AppState) -> Self {
+    pub fn new(port: u16, cert: ParsedCert, data: AppState, flood_control: bool) -> Self {
         let handle = Arc::new(ServerHandle::new(create_ssl_config(cert)));
         let mut listener = bind(SocketAddr::from(([0, 0, 0, 0], port)));
 
@@ -69,6 +71,7 @@ impl Server {
         // Accept loop
         let task = tokio::spawn(async move {
             let (shutdown_tx, _) = watch::channel(());
+            let mut flood_control = if flood_control { Some(FloodControl::new()) } else { None };
             loop {
                 if handle.shutdown.load(Ordering::Relaxed) {
                     break;
@@ -80,6 +83,14 @@ impl Server {
                     result = accept(&mut listener) => result,
                     _ = handle.shutdown_notify.notified() => break, // Shutdown
                 };
+
+                // Flood control
+                if flood_control.as_mut().is_some_and(|fc| fc.hit(addr)) {
+                    // Flood detected
+                    let _ = stream.set_linger(Some(Duration::ZERO)); // RST connection
+                    drop(stream);
+                    continue;
+                }
 
                 // Process connection
                 let handle = handle.clone();
@@ -241,4 +252,54 @@ pub fn create_ssl_config(cert: ParsedCert) -> ServerConfig {
     config.cert_compression_cache = CompressionCache::new(2).into(); // 1 cert * 2 compression algorithms
 
     config
+}
+
+struct FloodControl {
+    last_clean: Instant,
+    hit_map: HashMap<IpAddr, (u8, Instant)>,
+    block_list: HashMap<IpAddr, Instant>,
+}
+
+impl FloodControl {
+    fn new() -> Self {
+        Self {
+            last_clean: Instant::now(),
+            hit_map: HashMap::new(),
+            block_list: HashMap::new(),
+        }
+    }
+
+    fn hit(&mut self, addr: SocketAddr) -> bool {
+        let now = Instant::now();
+        let ip = addr.ip();
+
+        // Clean old entry
+        if self.last_clean.elapsed() > Duration::from_secs(10) {
+            self.block_list.retain(|_, time| *time > now);
+            self.hit_map.retain(|_, (_, time)| time.elapsed() < Duration::from_secs(10));
+            self.block_list.shrink_to_fit();
+            self.hit_map.shrink_to_fit();
+            self.last_clean = now;
+        }
+
+        // Check block
+        if self.block_list.get(&ip).is_some_and(|time| time > &now) {
+            return true;
+        }
+
+        // Update hit map
+        let (hit, time) = self.hit_map.entry(ip).or_insert_with(|| (0, now));
+        let time_diff = min(10, (now - *time).as_secs()) as u8;
+        *hit = hit.saturating_sub(time_diff as u8) + 1;
+        *time = now;
+
+        // Check hit
+        if *hit >= 10 {
+            warn!("Flood control activated for {ip} (blocking for 60 seconds)");
+            self.block_list.insert(ip, now + Duration::from_secs(60));
+            true
+        } else {
+            false
+        }
+    }
 }
