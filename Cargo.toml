@@ -32,19 +32,19 @@ p12 = "0.6.3"
 parking_lot = { version = "0.12", features = ["hardware-lock-elision"] }
 pin-project-lite = "0.2"
 regex-lite = "0.1.6"
-reqwest = { version = "0.12.15", default-features = false, features = ["rustls-tls-manual-roots-no-provider", "stream", "socks"] }
+reqwest = { version = "0.12.23", default-features = false, features = ["rustls-tls-manual-roots-no-provider", "stream", "socks"] }
 rmp-serde = "1.3.0"
-rustls = { version = "0.23.26", default-features = false, features = ["brotli", "aws_lc_rs", "std", "tls12", "zlib"] }
+rustls = { version = "0.23.31", default-features = false, features = ["brotli", "aws_lc_rs", "std", "tls12", "zlib"] }
 scopeguard = "1.2"
 serde = { version = "1.0.216", features = ["serde_derive"] }
 tempfile = "3.19.1"
-tokio = { version = "1.44.2", features = ["full"] }
+tokio = { version = "1.47.1", features = ["full"] }
 tokio-rustls = { version = "0.26.2", default-features = false, features = ["tls12"] }
 tokio-stream = { version = "0.1", default-features = false, features = ["fs"] }
-tokio-util = { version = "0.7.13", features = ["io"] }
-tower = { version = "0.5.1", features = ["timeout"] }
+tokio-util = { version = "0.7.16", features = ["io"] }
+tower = { version = "0.5.2", features = ["timeout"] }
 unicode-segmentation = "1.12.0"
-webpki-roots = "0.26.10"
+webpki-roots = "1.0.2"
 
 # cpufeatures not support all platforms
 [target.'cfg(any(target_arch = "x86", target_arch = "x86_64", target_arch = "aarch64"))'.dependencies]
@@ -60,9 +60,9 @@ tikv-jemallocator = { version = "0.6" } # jemalloc not support background thread
 rustix = { version = "1.0", features = ["fs"] }
 
 [target.'cfg(windows)'.dependencies]
-tray-icon = { version = "0.20.0", default-features = false }
+tray-icon = { version = "0.21.1", default-features = false }
 windows = { version = "0.61.1", features = ["Win32_Foundation", "Win32_System_Console", "Win32_UI_WindowsAndMessaging", "Win32_Storage_FileSystem"] }
-tao = "0.33.0"
+tao = "0.34.0"
 
 [build-dependencies]
 vergen-gix = "1.0.9"
@@ -71,7 +71,7 @@ vergen-gix = "1.0.9"
 tauri-winres = "0.3.1"
 
 [patch.crates-io]
-rustls = { git = "https://github.com/james58899/rustls.git", rev = "6038c999191e1295fff1f814b0f6a04289f3ab4e" }
+rustls = { git = "https://github.com/james58899/rustls.git", tag = "0.23.31-patch" }
 
 [profile.release]
 lto = true
