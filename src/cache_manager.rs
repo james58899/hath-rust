@@ -249,11 +249,11 @@ impl CacheManager {
         let path = info.to_path(&self.cache_dir);
         let dir = path.parent().unwrap();
 
-        if metadata(dir).await.is_err() {
-            if let Err(err) = create_dir_all(dir).await {
-                error!("Create cache directory fail: {}", err);
-                return;
-            }
+        if metadata(dir).await.is_err()
+            && let Err(err) = create_dir_all(dir).await
+        {
+            error!("Create cache directory fail: {}", err);
+            return;
         }
 
         // Try remove existing file
@@ -519,11 +519,11 @@ impl CacheManager {
         let disk_free = get_available_space(&self.cache_dir);
         let mut need_free = total_size.saturating_sub(size_limit);
 
-        if let Some(free) = disk_free {
-            if free < SIZE_100MB {
-                warn!("Disk space is low than 100MiB: available={}MiB", free / 1024 / 1024);
-                need_free += SIZE_100MB.saturating_sub(free);
-            }
+        if let Some(free) = disk_free
+            && free < SIZE_100MB
+        {
+            warn!("Disk space is low than 100MiB: available={}MiB", free / 1024 / 1024);
+            need_free += SIZE_100MB.saturating_sub(free);
         }
 
         debug!("Cache usage: totel={total_size}bytes, limit={size_limit}bytes, available={disk_free:?}bytes");

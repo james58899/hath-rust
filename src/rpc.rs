@@ -208,10 +208,10 @@ impl RPCClient {
     }
 
     pub async fn get_purgelist(&self, delta_time: u64) -> Option<Vec<String>> {
-        if let Ok(res) = self.send_action("get_blacklist", Some(&delta_time.to_string())).await {
-            if res.is_ok() {
-                return Some(res.data);
-            }
+        if let Ok(res) = self.send_action("get_blacklist", Some(&delta_time.to_string())).await
+            && res.is_ok()
+        {
+            return Some(res.data);
         }
         None
     }
@@ -287,10 +287,10 @@ The program will now terminate.
     pub async fn refresh_settings(&self) {
         info!("Refreshing Hentai@Home client settings from server...");
 
-        if let Ok(res) = self.send_action("client_settings", None).await {
-            if res.is_ok() {
-                self.update_settings(res.to_map());
-            }
+        if let Ok(res) = self.send_action("client_settings", None).await
+            && res.is_ok()
+        {
+            self.update_settings(res.to_map());
         }
     }
 
@@ -300,10 +300,10 @@ The program will now terminate.
 
     pub async fn sr_fetch(&self, file_index: &str, xres: &str, file_id: &str) -> Option<Vec<String>> {
         let add = format!("{file_index};{xres};{file_id}");
-        if let Ok(res) = self.send_action("srfetch", Some(&add)).await {
-            if res.is_ok() {
-                return Some(res.data);
-            }
+        if let Ok(res) = self.send_action("srfetch", Some(&add)).await
+            && res.is_ok()
+        {
+            return Some(res.data);
         }
 
         None

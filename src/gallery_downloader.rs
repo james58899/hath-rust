@@ -79,11 +79,11 @@ impl GalleryDownloader {
                 format!("{}...{}", &meta.title[..truncate_pos], name_suffix)
             };
             let dir = self.download_dir.join(name);
-            if !dir.exists() {
-                if let Err(err) = create_dir_all(&dir).await {
-                    error!("Create download directory fail: {}", err);
-                    return;
-                }
+            if !dir.exists()
+                && let Err(err) = create_dir_all(&dir).await
+            {
+                error!("Create download directory fail: {}", err);
+                return;
             }
 
             // Download files
@@ -137,10 +137,11 @@ impl GalleryDownloader {
                                             reqwest = util::create_http_client(Duration::from_secs(300), None);
                                         }
 
-                                        if retry == 2 && (err.is::<reqwest::Error>() || err.is::<Error>()) {
-                                            if let Some(host) = url.host_str() {
-                                                meta.failures.lock().push(format!("{}-{}-{}", host, info.fileindex, info.xres))
-                                            }
+                                        if retry == 2
+                                            && (err.is::<reqwest::Error>() || err.is::<Error>())
+                                            && let Some(host) = url.host_str()
+                                        {
+                                            meta.failures.lock().push(format!("{}-{}-{}", host, info.fileindex, info.xres))
                                         }
                                     } else {
                                         info!(

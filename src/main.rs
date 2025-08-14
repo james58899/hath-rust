@@ -319,11 +319,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
             }
 
             // Check purge list every 7hr
-            if counter % 2160 == 2159 {
-                if let Some(list) = client3.get_purgelist(43200).await {
-                    for info in list.iter().filter_map(CacheFileInfo::from_file_id) {
-                        cache_manager3.remove_cache(&info).await;
-                    }
+            if counter % 2160 == 2159
+                && let Some(list) = client3.get_purgelist(43200).await
+            {
+                for info in list.iter().filter_map(CacheFileInfo::from_file_id) {
+                    cache_manager3.remove_cache(&info).await;
                 }
             }
 

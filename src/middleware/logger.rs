@@ -89,10 +89,8 @@ where
             let code = res.status().as_u16();
             let mut size = 0;
 
-            if !is_head {
-                if let Some(Ok(i)) = res.headers().get(CONTENT_LENGTH).map(HeaderValue::to_str) {
-                    size = i.parse::<u64>().unwrap_or_default();
-                }
+            if !is_head && let Some(Ok(i)) = res.headers().get(CONTENT_LENGTH).map(HeaderValue::to_str) {
+                size = i.parse::<u64>().unwrap_or_default();
             }
 
             info!("{{{}/{:16} Code={} Byte={:<8} {}", count, ip.clone() + "}", code, size, request);
