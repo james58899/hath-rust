@@ -14,7 +14,7 @@ axum = { version = "0.8", default-features = false, features = ["http1", "matche
 bytes = "1.10.1"
 chrono = { version = "0.4", default-features = false, features = [ "now" ] }
 clap = { version = "4.5", features = ["derive", "wrap_help"] }
-const-hex = "1.14.0"
+const-hex = "1.15.0"
 const_format = "0.2.32"
 fastrand = "2.3.0"
 filesize = "0.2"
