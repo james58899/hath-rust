@@ -22,7 +22,7 @@ filetime = "0.2"
 futures = "0.3"
 http-body = "1.0"
 http-body-util = "0.1"
-hyper = { version = "1.6.0", features = ["http1", "server"] }
+hyper = { version = "1.7.0", features = ["http1", "server"] }
 hyper-util = { version = "0.1", features = ["tokio"] }
 idna_adapter = "~1.0.0" # Pin 1.0 to disable url idna support
 inquire = { version = "0.7", default-features = false, features = ["crossterm"] }
