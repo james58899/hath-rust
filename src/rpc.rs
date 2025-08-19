@@ -154,8 +154,7 @@ impl RPCClient {
 
         // Login
         let res = self.send_action("client_login", None).await;
-        if let Err(err) = res {
-            error!("Login failed: {}", err);
+        if res.is_err() {
             return Err(Error::connection_error("Failed to get a login response from server."));
         }
 
@@ -187,12 +186,10 @@ impl RPCClient {
                 static_range,
             })
         } else {
-            let err = Error::ApiResponseFail {
+            Err(Error::ApiResponseFail {
                 fail_code: res.status,
                 message: res.data.join("\n"),
-            };
-            error!("Login failed: {}", err);
-            Err(err)
+            })
         }
     }
 
@@ -468,6 +465,7 @@ The program will now terminate.
             }
         }
 
+        error!("Failed to send request: {}", error);
         Err(error)
     }
 

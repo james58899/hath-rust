@@ -183,7 +183,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
         None => setup(&args.data_dir).await?,
     };
     let client = Arc::new(RPCClient::new(id, &key, args.disable_ip_origin_check, args.max_connection, args.rpc_server_ip.as_deref()));
-    let init_settings = client.login().await?;
+    let init_settings = match client.login().await {
+        Ok(settings) => settings,
+        Err(err) => {
+            error!("Login error: {}", err);
+            sleep(Duration::from_secs(5)).await;
+            return Err(err.into());
+        }
+    };
 
     let (shutdown_send, shutdown_recv) = mpsc::unbounded_channel::<()>();
     let settings = client.settings();
@@ -232,6 +239,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     info!("Notifying the server that we have finished starting up the client...");
     if client.connect_check(init_settings).await.is_none() {
         error!("Startup notification failed.");
+        sleep(Duration::from_secs(5)).await;
         return Err(error::Error::ConnectTestFail.into());
     }
 
