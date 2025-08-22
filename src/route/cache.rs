@@ -1,4 +1,9 @@
-use std::{io::SeekFrom, ops::RangeInclusive, sync::Arc, time::Duration};
+use std::{
+    io::SeekFrom,
+    ops::RangeInclusive,
+    sync::Arc,
+    time::{Duration, Instant},
+};
 
 use async_stream::stream;
 use aws_lc_rs::digest;
@@ -111,7 +116,9 @@ pub(super) async fn hath(
         let tx2: Arc<watch::Sender<u64>> = tx.clone();
         let info2 = info.clone();
         let temp_path2 = temp_path.clone();
+        let metrics = data.metrics.clone();
         tokio::spawn(async move {
+            let start = Instant::now();
             let mut hasher = digest::Context::new(&digest::SHA1_FOR_LEGACY_USE_ONLY);
             let mut progress = 0;
             let mut reqwest = data.reqwest.clone();
@@ -169,6 +176,7 @@ pub(super) async fn hath(
                         }
                         hasher.update(data);
                         progress += write_size as u64;
+                        metrics.cache_received_size.inc_by(write_size as u64);
                         tx2.send_replace(progress);
                     }
                     if progress == file_size {
@@ -177,12 +185,15 @@ pub(super) async fn hath(
                             break 'retry;
                         }
                         let hash = hasher.finish();
+                        let duration = start.elapsed();
                         tx2.send_replace(progress);
                         tx2.closed().await; // Wait all request done
                         data.download_state.lock().remove(&info2.hash());
                         if hash.as_ref() == info2.hash() {
                             tx2.closed().await; // Wait again to avoid race conditions
                             data.cache_manager.import_cache(&info2, &temp_path2).await;
+                            metrics.cache_received.inc();
+                            metrics.cache_received_duration.observe(duration.as_secs_f64());
                         } else {
                             error!("Cache hash mismatch: expected: {:x?}, got: {:x?}", info2.hash(), hash);
                         }

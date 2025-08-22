@@ -1,10 +1,7 @@
 use std::{
     cmp::max,
     pin::Pin,
-    sync::{
-        Arc,
-        atomic::{AtomicU64, Ordering},
-    },
+    sync::Arc,
     task::{Context, Poll},
     time::Instant,
 };
@@ -21,18 +18,16 @@ use log::info;
 use pin_project_lite::pin_project;
 use tower::{Layer, Service};
 
-use crate::server::ClientAddr;
+use crate::{metrics::Metrics, server::ClientAddr};
 
 #[derive(Clone)]
 pub(super) struct Logger {
-    counter: Arc<AtomicU64>,
+    metrics: Arc<Metrics>,
 }
 
-impl Default for Logger {
-    fn default() -> Self {
-        Self {
-            counter: Arc::new(AtomicU64::new(0)),
-        }
+impl Logger {
+    pub fn new(metrics: Arc<Metrics>) -> Self {
+        Logger { metrics }
     }
 }
 
@@ -41,7 +36,7 @@ impl<S> Layer<S> for Logger {
 
     fn layer(&self, inner: S) -> Self::Service {
         LoggerMiddleware {
-            counter: self.counter.clone(),
+            metrics: self.metrics.clone(),
             service: inner,
         }
     }
@@ -49,7 +44,7 @@ impl<S> Layer<S> for Logger {
 
 #[derive(Clone)]
 pub(super) struct LoggerMiddleware<S> {
-    counter: Arc<AtomicU64>,
+    metrics: Arc<Metrics>,
     service: S,
 }
 
@@ -68,7 +63,7 @@ where
 
     fn call(&mut self, req: Request) -> Self::Future {
         let start = Instant::now();
-        let count = self.counter.fetch_add(1, Ordering::Relaxed) + 1;
+        let count = self.metrics.cache_sent.inc() + 1;
         let ip = req
             .extensions()
             .get::<ClientAddr>()
@@ -84,6 +79,7 @@ where
 
         let fut = self.service.call(req);
 
+        let metrics = self.metrics.clone();
         Box::pin(async move {
             let res = fut.await?;
             let code = res.status().as_u16();
@@ -102,6 +98,7 @@ where
                 size: 0,
                 start,
                 body_start: Instant::now(),
+                metrics,
             }))
         })
     }
@@ -117,6 +114,7 @@ pin_project! {
         size: u64,
         start: std::time::Instant,
         body_start: std::time::Instant,
+        metrics: Arc<Metrics>,
     }
 
     impl PinnedDrop for LoggerFinalizer {
@@ -128,7 +126,9 @@ pin_project! {
                 this.size,
                 this.start.elapsed().as_millis(),
                 this.size as f64 / max(this.body_start.elapsed().as_millis(), 1) as f64
-            )
+            );
+            this.metrics.cache_sent_size.inc_by(this.size);
+            this.metrics.cache_sent_duration.observe(this.start.elapsed().as_secs_f64());
         }
     }
 }

@@ -36,6 +36,7 @@ use tokio_stream::wrappers::ReadDirStream;
 
 use crate::{
     file_reader::FileReader,
+    metrics::Metrics,
     rpc::{InitSettings, Settings},
 };
 
@@ -48,6 +49,13 @@ pub struct CacheManager {
     temp_dir: PathBuf,
     size_limit: AtomicU64,
     io_pool: Option<Runtime>,
+    metrics: Arc<Metrics>,
+}
+
+pub struct CacheConfig {
+    data_dir: PathBuf,
+    cache_dir: PathBuf,
+    temp_dir: PathBuf,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -55,6 +63,16 @@ struct CacheState {
     file_count: u64,
     size: u64,
     oldest: i64,
+}
+
+impl CacheConfig {
+    pub fn new<P: AsRef<Path>>(data_dir: P, cache_dir: P, temp_dir: P) -> Self {
+        Self {
+            data_dir: data_dir.as_ref().to_path_buf(),
+            cache_dir: cache_dir.as_ref().to_path_buf(),
+            temp_dir: temp_dir.as_ref().to_path_buf(),
+        }
+    }
 }
 
 impl CacheState {
@@ -89,33 +107,33 @@ impl Drop for CacheManager {
 }
 
 impl CacheManager {
-    pub async fn new<P: AsRef<Path>>(
-        data_dir: P,
-        cache_dir: P,
-        temp_dir: P,
+    pub async fn new(
+        config: CacheConfig,
         settings: Arc<Settings>,
         init_settings: &InitSettings,
         force_background_scan: bool,
         shutdown: UnboundedSender<()>,
+        metrics: Arc<Metrics>,
     ) -> Result<Arc<Self>, Error> {
         let io_pool = Builder::new_multi_thread().thread_name("IO-Worker").worker_threads(20).build()?;
         let new = Arc::new(Self {
-            cache_dir: cache_dir.as_ref().to_path_buf(),
+            cache_dir: config.cache_dir.clone(),
             cache_state: Default::default(),
-            cache_state_path: data_dir.as_ref().join("cache_state.dat"),
-            temp_dir: temp_dir.as_ref().to_path_buf(),
+            cache_state_path: config.data_dir.join("cache_state.dat"),
+            temp_dir: config.temp_dir.clone(),
             size_limit: AtomicU64::new(u64::MAX),
             io_pool: Some(io_pool),
+            metrics,
         });
         new.update_settings(settings);
 
-        delete_java_cache_data(data_dir).await; // Force official version rescan cache
-        clean_temp_dir(temp_dir.as_ref()).await;
+        delete_java_cache_data(&config.data_dir).await; // Force official version rescan cache
+        clean_temp_dir(&config.temp_dir).await;
 
         let manager = new.clone();
         let verify_cache = init_settings.verify_cache();
         let static_range = init_settings.static_range();
-        let free = get_available_space(cache_dir.as_ref());
+        let free = get_available_space(&config.cache_dir);
         let low_disk = free.is_some_and(|x| x < SIZE_100MB);
 
         // Load cache state
@@ -129,6 +147,10 @@ impl CacheManager {
             };
             for (sr, state) in old_state {
                 if static_range.contains(&sr) {
+                    new.metrics.static_range.inc();
+                    new.metrics.cache_count.inc_by(state.file_count);
+                    new.metrics.cache_size.inc_by(state.size);
+
                     new.cache_state.lock().insert(sr, state);
                 }
             }
@@ -273,6 +295,9 @@ impl CacheManager {
 
         if let Some(size) = async_filesize(&path).await {
             self.cache_state.lock().entry(info.static_range()).or_default().add_file(size);
+
+            self.metrics.cache_count.inc();
+            self.metrics.cache_size.inc_by(size);
         }
     }
 
@@ -291,6 +316,9 @@ impl CacheManager {
             state.remove_file(size);
         }
 
+        self.metrics.cache_count.dec();
+        self.metrics.cache_size.dec_by(size);
+
         Some(())
     }
 
@@ -298,6 +326,7 @@ impl CacheManager {
         let size_limit = settings.size_limit();
         info!("Set size limit to {:} GiB", size_limit / 1024 / 1024 / 1024);
         self.size_limit.store(size_limit, Relaxed);
+        self.metrics.cache_capacity.set(size_limit.try_into().unwrap_or(i64::MAX));
     }
 
     pub async fn save_state(&self) {
@@ -510,6 +539,10 @@ impl CacheManager {
             .fold((0, 0), |(size, count), state| (size + state.size, count + state.file_count));
         info!("Finished cache scan. Cache size: {}, file count: {}", total_size, file_count);
 
+        self.metrics.cache_size.set(total_size);
+        self.metrics.cache_count.set(file_count);
+        self.metrics.static_range.set(self.cache_state.lock().len() as i64);
+
         Ok(())
     }
 
@@ -518,6 +551,10 @@ impl CacheManager {
         let size_limit = self.size_limit.load(Relaxed);
         let disk_free = get_available_space(&self.cache_dir);
         let mut need_free = total_size.saturating_sub(size_limit);
+
+        // Update metrics
+        self.metrics.cache_size.set(total_size);
+        self.metrics.static_range.set(self.cache_state.lock().len() as i64);
 
         if let Some(free) = disk_free
             && free < SIZE_100MB

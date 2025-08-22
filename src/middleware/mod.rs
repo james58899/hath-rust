@@ -30,8 +30,8 @@ pub fn register_layer(router: Router<Arc<AppState>>, data: &AppState) -> Router<
                 .layer(HandleErrorLayer::new(|_| async { StatusCode::SERVICE_UNAVAILABLE }))
                 .layer(TimeoutLayer::new(Duration::from_secs(181))),
         )
-        .layer(Logger::default())
-        .layer(ConnectionCounter::new(data.rpc.settings(), data.command_channel.clone()))
+        .layer(Logger::new(data.metrics.clone()))
+        .layer(ConnectionCounter::new(data.metrics.connections.clone(), data.rpc.settings(), data.command_channel.clone()))
         .layer(middleware::map_response(default_headers))
 }
 

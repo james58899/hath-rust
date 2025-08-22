@@ -1,9 +1,6 @@
 use std::{
     pin::Pin,
-    sync::{
-        Arc,
-        atomic::{AtomicU64, Ordering},
-    },
+    sync::{Arc, atomic::AtomicU64},
     task::{Context, Poll},
 };
 
@@ -15,6 +12,7 @@ use axum::{
 use futures::future::BoxFuture;
 use http_body::{Frame, SizeHint};
 use pin_project_lite::pin_project;
+use prometheus_client::metrics::gauge::Gauge;
 use scopeguard::{ScopeGuard, guard};
 use tokio::sync::mpsc::Sender;
 use tower::{Layer, Service};
@@ -28,16 +26,16 @@ pub(super) struct ConnectionCounter {
 
 #[derive(Clone)]
 struct ConnectionCounterState {
-    counter: Arc<AtomicU64>,
+    counter: Gauge<u64, AtomicU64>,
     settings: Arc<Settings>,
     command_channel: Sender<Command>,
 }
 
 impl ConnectionCounter {
-    pub fn new(settings: Arc<Settings>, command_channel: Sender<Command>) -> Self {
+    pub fn new(counter: Gauge<u64, AtomicU64>, settings: Arc<Settings>, command_channel: Sender<Command>) -> Self {
         Self {
             data: ConnectionCounterState {
-                counter: Arc::new(AtomicU64::new(0)),
+                counter,
                 settings,
                 command_channel,
             },
@@ -77,11 +75,11 @@ where
 
     fn call(&mut self, req: Request) -> Self::Future {
         let counter = self.data.counter.clone();
-        if counter.fetch_add(1, Ordering::Relaxed) > (self.data.settings.max_connection() as f64 * 0.8).ceil() as u64 {
+        if counter.inc() > (self.data.settings.max_connection() as f64 * 0.8).ceil() as u64 {
             let _ = self.data.command_channel.try_send(Command::Overload);
         };
         let guard = guard(counter, move |counter| {
-            counter.fetch_sub(1, Ordering::Relaxed);
+            counter.dec();
         });
 
         let fut = self.service.call(req);
@@ -92,7 +90,7 @@ where
             match res {
                 Ok(res) => Ok(res.map(|body| ConnectionCounterFinalizer { body, counter })),
                 Err(err) => {
-                    counter.fetch_sub(1, Ordering::Relaxed);
+                    counter.dec();
                     Err(err)
                 }
             }
@@ -104,12 +102,12 @@ pin_project! {
     pub(super) struct ConnectionCounterFinalizer {
         #[pin]
         body: Body,
-        counter: Arc<AtomicU64>,
+        counter: Gauge<u64, AtomicU64>,
     }
 
     impl PinnedDrop for ConnectionCounterFinalizer {
         fn drop(this: Pin<&mut Self>) {
-            this.counter.fetch_sub(1, Ordering::Relaxed);
+            this.counter.dec();
         }
     }
 }

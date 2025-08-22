@@ -26,9 +26,10 @@ use tokio::{
 };
 
 use crate::{
-    cache_manager::{CacheFileInfo, CacheManager},
+    cache_manager::{CacheConfig, CacheFileInfo, CacheManager},
     gallery_downloader::GalleryDownloader,
     logger::Logger,
+    metrics::Metrics,
     rpc::RPCClient,
     server::Server,
     util::{create_dirs, create_http_client},
@@ -39,6 +40,7 @@ mod error;
 mod file_reader;
 mod gallery_downloader;
 mod logger;
+mod metrics;
 mod middleware;
 mod route;
 mod rpc;
@@ -125,6 +127,10 @@ struct Args {
     /// Override bootstrap RPC server IP, used if rpc.hentaiathome.net cannot be resolved or is blocked.
     #[arg(long)]
     rpc_server_ip: Option<String>,
+
+    /// Enable metrics endpoint
+    #[arg(long, default_value_t = false)]
+    enable_metrics: bool,
 }
 
 type DownloadState = Mutex<HashMap<[u8; 20], (watch::Receiver<Option<Arc<TempPath>>>, Arc<watch::Sender<u64>>)>>;
@@ -136,6 +142,7 @@ pub struct AppState {
     cache_manager: Arc<CacheManager>,
     command_channel: Sender<Command>,
     has_proxy: bool,
+    metrics: Arc<Metrics>,
 }
 
 pub enum Command {
@@ -176,6 +183,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .flush(args.flush_log)
         .console_level(args.quiet);
 
+    let metrics = Arc::new(Metrics::new());
+
     info!("Hentai@Home {} (Rust {}) starting up", CLIENT_VERSION, VERSION);
 
     let (id, key) = match read_credential(&args.data_dir).await? {
@@ -196,13 +205,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let settings = client.settings();
     logger.config().write_info(!settings.disable_logging());
     let cache_manager = CacheManager::new(
-        args.data_dir,
-        args.cache_dir,
-        args.temp_dir,
+        CacheConfig::new(args.data_dir, args.cache_dir, args.temp_dir),
         settings.clone(),
         &init_settings,
         args.force_background_scan,
         shutdown_send.clone(),
+        metrics.clone(),
     )
     .await?;
 
@@ -231,9 +239,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
         cache_manager: cache_manager.clone(),
         command_channel: tx.clone(),
         has_proxy: proxy.is_some(),
+        metrics: metrics.clone(),
     };
     let flood_control = !(args.disable_flood_control || args.disable_ip_origin_check);
-    let server = Server::new(port, cert, state, flood_control);
+    let server = Server::new(port, cert, state, flood_control, args.enable_metrics);
     let server_handle = server.handle();
 
     info!("Notifying the server that we have finished starting up the client...");
@@ -261,6 +270,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let downloader = Arc::new(Mutex::new(None));
     let downloader2 = downloader.clone();
     let logger_config = logger.config();
+    let metrics2 = metrics.clone();
     tokio::spawn(async move {
         let mut last_overload = Instant::now().checked_sub(Duration::from_secs(30)).unwrap_or_else(Instant::now);
         while let Some(command) = rx.recv().await {
@@ -289,7 +299,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 Command::StartDownloader => {
                     let mut downloader = downloader2.lock();
                     if downloader.is_none() {
-                        let new = GalleryDownloader::new(client2.clone(), &args.download_dir, proxy.clone());
+                        let new = GalleryDownloader::new(client2.clone(), &args.download_dir, proxy.clone(), metrics2.clone());
                         let downloader3 = downloader2.clone();
                         *downloader = Some(tokio::spawn(async move {
                             new.run().await;

@@ -20,7 +20,7 @@ use tokio::{
 };
 use unicode_segmentation::UnicodeSegmentation;
 
-use crate::{error::Error, rpc::RPCClient, util};
+use crate::{error::Error, metrics::Metrics, rpc::RPCClient, util};
 
 type BoxError = Box<dyn std::error::Error + Send + Sync>;
 
@@ -30,14 +30,16 @@ pub struct GalleryDownloader {
     client: Arc<RPCClient>,
     download_dir: PathBuf,
     proxy: Option<Proxy>,
+    metrics: Arc<Metrics>,
 }
 
 impl GalleryDownloader {
-    pub fn new<P: AsRef<Path>>(client: Arc<RPCClient>, download_dir: P, proxy: Option<Proxy>) -> GalleryDownloader {
+    pub fn new<P: AsRef<Path>>(client: Arc<RPCClient>, download_dir: P, proxy: Option<Proxy>, metrics: Arc<Metrics>) -> GalleryDownloader {
         GalleryDownloader {
             client,
             download_dir: download_dir.as_ref().to_path_buf(),
             proxy,
+            metrics,
         }
     }
 
@@ -86,6 +88,8 @@ impl GalleryDownloader {
                 return;
             }
 
+            self.metrics.download_count.inc();
+
             // Download files
             let downloaded_files = Arc::new(Mutex::new(HashSet::new()));
             'retry: for retry in 0..10 {
@@ -126,9 +130,13 @@ impl GalleryDownloader {
                             let meta = meta.clone();
                             let downloaded_files = downloaded_files.clone();
                             let mut reqwest = reqwest.clone();
+                            let metrics = self.metrics.clone();
                             tokio::spawn(async move {
                                 for retry in 0..3 {
-                                    if let Err(err) = download(reqwest.clone(), url.clone(), &path, info.expected_sha1_hash).await {
+                                    let reqwest2 = reqwest.clone();
+                                    let url2 = url.clone();
+                                    let metrics2 = metrics.clone();
+                                    if let Err(err) = download(reqwest2, url2, &path, info.expected_sha1_hash, metrics2).await {
                                         warn!("Gallery file download error: url={}, err={}", url, err);
 
                                         // Try download without proxy at third time
@@ -293,7 +301,14 @@ impl GalleryDownloader {
     }
 }
 
-async fn download<P: AsRef<Path>>(reqwest: reqwest::Client, url: Url, path: P, hash: Option<[u8; 20]>) -> Result<(), BoxError> {
+async fn download<P: AsRef<Path>>(
+    reqwest: reqwest::Client,
+    url: Url,
+    path: P,
+    hash: Option<[u8; 20]>,
+    metrics: Arc<Metrics>,
+) -> Result<(), BoxError> {
+    let start = Instant::now();
     let mut file = fs::File::create(&path).await?;
     let mut stream = reqwest
         .get(url)
@@ -304,6 +319,7 @@ async fn download<P: AsRef<Path>>(reqwest: reqwest::Client, url: Url, path: P, h
     let mut hasher = digest::Context::new(&digest::SHA1_FOR_LEGACY_USE_ONLY);
     while let Some(bytes) = stream.next().await {
         let bytes = &bytes?;
+        metrics.download_size.inc_by(bytes.len() as u64);
         file.write_all(bytes).await?;
         hasher.update(bytes);
     }
@@ -317,6 +333,9 @@ async fn download<P: AsRef<Path>>(reqwest: reqwest::Client, url: Url, path: P, h
             }));
         }
     }
+
+    metrics.donwload_file_count.inc();
+    metrics.download_duration.observe(start.elapsed().as_secs_f64());
 
     Ok(())
 }

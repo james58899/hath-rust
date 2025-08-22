@@ -3,10 +3,15 @@ use std::{collections::HashMap, sync::Arc};
 use axum::{
     Router,
     body::Body,
-    http::{Response, StatusCode, header::LOCATION},
+    extract::State,
+    http::{
+        Response, StatusCode,
+        header::{CONTENT_TYPE, LOCATION},
+    },
     response::{Html, IntoResponse},
     routing::get,
 };
+use prometheus_client::encoding::text::encode;
 
 use crate::{
     AppState,
@@ -29,6 +34,16 @@ pub fn register_route(router: Router<Arc<AppState>>) -> Router<Arc<AppState>> {
 
 pub async fn default() -> impl IntoResponse {
     (StatusCode::NOT_FOUND, Html("An error has occurred. (404)"))
+}
+
+pub async fn metrics(data: State<Arc<AppState>>) -> impl IntoResponse {
+    let mut buffer = String::new();
+    encode(&mut buffer, &data.metrics.registry).unwrap();
+
+    Response::builder()
+        .header(CONTENT_TYPE, "application/openmetrics-text; version=1.0.0; charset=utf-8")
+        .body(Body::from(buffer))
+        .unwrap()
 }
 
 async fn favicon() -> impl IntoResponse {

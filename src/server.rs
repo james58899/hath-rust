@@ -11,7 +11,7 @@ use std::{
 };
 
 use arc_swap::ArcSwap;
-use axum::{Extension, Router, extract::FromRequestParts, http::request::Parts};
+use axum::{Extension, Router, extract::FromRequestParts, http::request::Parts, routing::get};
 use futures::pin_mut;
 use hyper::server::conn::http1;
 use hyper_util::rt::{TokioIo, TokioTimer};
@@ -50,7 +50,7 @@ pub struct ServerHandle {
 }
 
 impl Server {
-    pub fn new(port: u16, cert: ParsedCert, data: AppState, flood_control: bool) -> Self {
+    pub fn new(port: u16, cert: ParsedCert, data: AppState, flood_control: bool, enable_metrics: bool) -> Self {
         let handle = Arc::new(ServerHandle::new(create_ssl_config(cert)));
         let mut listener = bind(SocketAddr::from(([0, 0, 0, 0], port)));
 
@@ -64,6 +64,10 @@ impl Server {
 
         let mut router = Router::new();
         router = route::register_route(router);
+        if enable_metrics {
+            router = router.route("/metrics", get(route::metrics));
+            info!("Metrics endpoint enabled at '/metrics'");
+        }
         router = middleware::register_layer(router, &data);
         let router = router.with_state(Arc::new(data));
 
