@@ -34,7 +34,7 @@ pub fn create_http_client(timeout: Duration, proxy: Option<Proxy>) -> reqwest::C
         .use_preconfigured_tls(tls)
         .tcp_keepalive(Duration::from_secs(75)) // Linux default keepalive inverval
         .connect_timeout(Duration::from_secs(5))
-        .read_timeout(Duration::from_secs(30))
+        .read_timeout(timeout / 3)
         .timeout(timeout)
         .pool_idle_timeout(Duration::from_secs(3600))
         .pool_max_idle_per_host(8)
