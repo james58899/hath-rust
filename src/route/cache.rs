@@ -123,18 +123,19 @@ pub(super) async fn hath(
             let mut progress = 0;
             let mut reqwest = data.reqwest.clone();
             let mut sources = sources.iter().cycle();
+            let mut use_proxy = data.has_proxy;
             'retry: for retry in 0..3 {
                 let mut file = match OpenOptions::new().write(true).create(true).truncate(false).open(&*temp_path2).await {
                     Ok(mut f) => {
                         if let Err(err) = f.seek(SeekFrom::Start(progress)).await {
                             error!("Proxy temp file seek fail: {}", err);
-                            continue 'retry;
+                            continue;
                         }
                         f
                     }
                     Err(err) => {
                         error!("Proxy temp file create fail: {}", err);
-                        continue 'retry;
+                        continue;
                     }
                 };
 
@@ -144,10 +145,13 @@ pub(super) async fn hath(
                 if let Err(ref err) = request {
                     error!("Cache download fail: url={}, err={}", source, err);
 
-                    // Disable proxy on third retry
-                    if retry == 1 && data.has_proxy {
+                    // Disable proxy on connect error and third retry
+                    if use_proxy && (err.is_connect() || retry == 1) {
                         reqwest = create_http_client(Duration::from_secs(30), None);
+                        use_proxy = false;
                     }
+
+                    continue;
                 };
 
                 // Start download
