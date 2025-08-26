@@ -334,7 +334,7 @@ async fn download<P: AsRef<Path>>(
         }
     }
 
-    metrics.donwload_file_count.inc();
+    metrics.download_file_count.inc();
     metrics.download_duration.observe(start.elapsed().as_secs_f64());
 
     Ok(())

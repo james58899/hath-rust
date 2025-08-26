@@ -28,7 +28,7 @@ pub struct Metrics {
     pub cache_count: Gauge<u64, AtomicU64>,
     pub cache_size: Gauge<u64, AtomicU64>,
     pub download_count: Counter,
-    pub donwload_file_count: Counter,
+    pub download_file_count: Counter,
     pub download_size: Counter,
     pub download_duration: Histogram,
 }
@@ -65,11 +65,11 @@ impl Metrics {
 
         // H@H downloader metrics
         let download_count = Counter::default();
-        let donwload_file_count = Counter::default();
+        let download_file_count = Counter::default();
         let download_size = Counter::default();
         let download_duration = Histogram::new([0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0]);
         registry.register("download_count", "Number of tasks received by downloader", download_count.clone());
-        registry.register("donwload_file_count", "Number of files downloaded", donwload_file_count.clone());
+        registry.register("download_file_count", "Number of files downloaded", download_file_count.clone());
         registry.register_with_unit("download_size", "Number of bytes downloaded", Bytes, download_size.clone());
         registry.register_with_unit("download_duration", "Histogram of download", Seconds, download_duration.clone());
 
@@ -90,7 +90,7 @@ impl Metrics {
             cache_count,
             cache_size,
             download_count,
-            donwload_file_count,
+            download_file_count,
             download_size,
             download_duration,
         }
