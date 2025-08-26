@@ -32,7 +32,7 @@ p12 = "0.6.3"
 parking_lot = { version = "0.12", features = ["hardware-lock-elision"] }
 pin-project-lite = "0.2"
 prometheus-client = "0.24.0"
-regex-lite = "0.1.6"
+regex-lite = "0.1.7"
 reqwest = { version = "0.12.23", default-features = false, features = ["rustls-tls-manual-roots-no-provider", "stream", "socks"] }
 rmp-serde = "1.3.0"
 rustls = { version = "0.23.31", default-features = false, features = ["brotli", "aws_lc_rs", "std", "tls12", "zlib"] }
