@@ -2283,7 +2283,7 @@ dependencies = [
 
 [[package]]
 name = "hath-rust"
-version = "1.12.0"
+version = "1.12.1"
 dependencies = [
  "arc-swap",
  "async-stream",
