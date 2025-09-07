@@ -67,7 +67,7 @@ impl Metrics {
         let download_count = Counter::default();
         let download_file_count = Counter::default();
         let download_size = Counter::default();
-        let download_duration = Histogram::new([0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0]);
+        let download_duration = Histogram::new([0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0]);
         registry.register("download_count", "Number of tasks received by downloader", download_count.clone());
         registry.register("download_file_count", "Number of files downloaded", download_file_count.clone());
         registry.register_with_unit("download_size", "Number of bytes downloaded", Bytes, download_size.clone());
