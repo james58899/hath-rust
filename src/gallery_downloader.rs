@@ -137,7 +137,11 @@ impl GalleryDownloader {
                                     let url2 = url.clone();
                                     let metrics2 = metrics.clone();
                                     if let Err(err) = download(reqwest2, url2, &path, info.expected_sha1_hash, metrics2).await {
-                                        warn!("Gallery file download error: url={}, err={}", url, err);
+                                        if err.is::<reqwest::Error>() {
+                                            warn!("Gallery file download error: {:?}", err);
+                                        } else {
+                                            warn!("Gallery file download error: url={}, err={}", url, err);
+                                        }
 
                                         // Try download without proxy at third time
                                         if retry == 1 && use_proxy {
