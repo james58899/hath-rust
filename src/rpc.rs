@@ -420,9 +420,9 @@ The program will now terminate.
                 .and_then(|time| Utc.timestamp_opt(time, 0).single())
                 .and_then(|time| time.checked_add_signed(request_time / 4)); // connecting 1 RTT + request 1 RTT
             if let Some(time) = server_time {
-                let offset = Utc::now().signed_duration_since(time).num_milliseconds();
-                self.clock_offset.store((offset as f64 / 1000f64).round() as i64, Ordering::Relaxed);
-                debug!("Server clock offset: {}ms±{}ms", offset, request_time.num_milliseconds());
+                let offset = time.signed_duration_since(Utc::now());
+                self.clock_offset.store(offset.num_seconds(), Ordering::Relaxed);
+                debug!("Server clock offset: {}ms±{}ms", offset.num_milliseconds(), request_time.num_milliseconds());
             }
 
             let min_version = data.get("min_client_build").and_then(|s| s.parse().ok());
