@@ -29,6 +29,7 @@ use tokio::{
 use crate::{
     AppState,
     cache_manager::CacheFileInfo,
+    metrics::{LABEL_CACHE_DOWNLOAD, LABEL_CACHE_FETCH_URL},
     route::{forbidden, not_found, parse_additional},
     util::{create_http_client, string_to_hash},
 };
@@ -107,18 +108,23 @@ pub(super) async fn hath(
         let temp_path = Arc::new(data.cache_manager.create_temp_file().await);
         temp_tx.send_replace(Some(temp_path.clone()));
 
+        let metrics = data.metrics.clone();
+        let fetch_time = Instant::now();
         let sources = match data.rpc.sr_fetch(file_index, xres, &file_id).await {
             Some(v) => v,
             None => return not_found(),
         };
+        metrics
+            .cache_received_duration
+            .get_or_create(&LABEL_CACHE_FETCH_URL)
+            .observe(fetch_time.elapsed().as_secs_f64());
 
         // Download worker
         let tx2: Arc<watch::Sender<u64>> = tx.clone();
         let info2 = info.clone();
         let temp_path2 = temp_path.clone();
-        let metrics = data.metrics.clone();
         tokio::spawn(async move {
-            let start = Instant::now();
+            let download_time = Instant::now();
             let mut hasher = digest::Context::new(&digest::SHA1_FOR_LEGACY_USE_ONLY);
             let mut progress = 0;
             let mut reqwest = data.reqwest.clone();
@@ -191,7 +197,7 @@ pub(super) async fn hath(
                         break 'retry;
                     }
                     let hash = hasher.finish();
-                    let duration = start.elapsed();
+                    let duration = download_time.elapsed();
                     tx2.send_replace(progress);
                     tx2.closed().await; // Wait all request done
                     data.download_state.lock().remove(&info2.hash());
@@ -199,7 +205,10 @@ pub(super) async fn hath(
                         tx2.closed().await; // Wait again to avoid race conditions
                         data.cache_manager.import_cache(&info2, &temp_path2).await;
                         metrics.cache_received.inc();
-                        metrics.cache_received_duration.observe(duration.as_secs_f64());
+                        metrics
+                            .cache_received_duration
+                            .get_or_create(&LABEL_CACHE_DOWNLOAD)
+                            .observe(duration.as_secs_f64());
                     } else {
                         error!("Cache tempfile hash mismatch: expected: {:x?}, got: {:x?}", info2.hash(), hash);
                     }

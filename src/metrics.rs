@@ -2,9 +2,10 @@ use std::{fmt::Error, sync::atomic::AtomicU64, time::Instant};
 
 use prometheus_client::{
     collector::Collector,
-    encoding::{DescriptorEncoder, EncodeMetric},
+    encoding::{DescriptorEncoder, EncodeLabelSet, EncodeLabelValue, EncodeMetric},
     metrics::{
         counter::{ConstCounter, Counter},
+        family::Family,
         gauge::Gauge,
         histogram::Histogram,
     },
@@ -14,6 +15,13 @@ use prometheus_client::{
     },
 };
 
+pub const LABEL_CACHE_FETCH_URL: CacheFetchLabels = CacheFetchLabels {
+    phase: CacheFetchPhase::FetchUrl,
+};
+pub const LABEL_CACHE_DOWNLOAD: CacheFetchLabels = CacheFetchLabels {
+    phase: CacheFetchPhase::Download,
+};
+
 pub struct Metrics {
     pub registry: Registry,
     pub cache_sent: Counter,
@@ -21,7 +29,7 @@ pub struct Metrics {
     pub cache_sent_duration: Histogram,
     pub cache_received: Counter,
     pub cache_received_size: Counter,
-    pub cache_received_duration: Histogram,
+    pub cache_received_duration: Family<CacheFetchLabels, Histogram>,
     pub connections: Gauge<u64, AtomicU64>,
     pub static_range: Gauge,
     pub cache_capacity: Gauge,
@@ -43,7 +51,9 @@ impl Metrics {
         let cache_sent_duration = Histogram::new([0.01, 0.025, 0.05, 0.1, 0.2, 0.5, 1.0, 1.5, 2.0, 3.0, 5.0, 10.0, 30.0]);
         let cache_received = Counter::default();
         let cache_received_size = Counter::default();
-        let cache_received_duration = Histogram::new([0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0]);
+        let cache_received_duration = Family::<CacheFetchLabels, Histogram>::new_with_constructor(|| {
+            Histogram::new([0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0])
+        });
         let connections = Gauge::<u64, AtomicU64>::default();
         registry.register("cache_sent", "Number of files sent", cache_sent.clone());
         registry.register_with_unit("cache_sent_size", "Number of bytes sent", Bytes, cache_sent_size.clone());
@@ -95,6 +105,17 @@ impl Metrics {
             download_duration,
         }
     }
+}
+
+#[derive(Clone, Debug, Eq, Hash, PartialEq, EncodeLabelSet)]
+pub struct CacheFetchLabels {
+    phase: CacheFetchPhase,
+}
+
+#[derive(Clone, Debug, Eq, Hash, PartialEq, EncodeLabelValue)]
+enum CacheFetchPhase {
+    FetchUrl,
+    Download,
 }
 
 #[derive(Debug)]
