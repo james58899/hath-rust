@@ -470,7 +470,7 @@ The program will now terminate.
     }
 
     async fn send_request<U: IntoUrl>(&self, url: U) -> Result<String, reqwest::Error> {
-        let res = self.reqwest.get(url).timeout(Duration::from_secs(600)).send().await?;
+        let res = self.reqwest.get(url).send().await?;
 
         if let Err(err) = res.error_for_status_ref() {
             let status = res.status();
