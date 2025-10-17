@@ -36,7 +36,9 @@ regex-lite = "0.1.6"
 reqwest = { version = "0.12.23", default-features = false, features = ["rustls-tls-manual-roots-no-provider", "stream", "socks"] }
 rmp-serde = "1.3.0"
 rustls = { version = "0.23.31", default-features = false, features = ["brotli", "aws_lc_rs", "std", "tls12", "zlib"] }
+webpki = { package = "rustls-webpki", version = "0.103.4" }
 scopeguard = "1.2"
+self_cell = "1.0"
 serde = { version = "1.0.216", features = ["serde_derive"] }
 tempfile = "3.19.1"
 tokio = { version = "1.47.1", features = ["full"] }

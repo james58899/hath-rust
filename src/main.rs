@@ -131,6 +131,10 @@ struct Args {
     /// Enable metrics endpoint
     #[arg(long, default_value_t = false)]
     enable_metrics: bool,
+
+    /// Enable strict SNI validation (reject connections without SNI or with mismatched SNI)
+    #[arg(long, default_value_t = false)]
+    strict_sni: bool,
 }
 
 type DownloadState = Mutex<HashMap<[u8; 20], (watch::Receiver<Option<Arc<TempPath>>>, Arc<watch::Sender<u64>>)>>;
@@ -242,7 +246,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         metrics: metrics.clone(),
     };
     let flood_control = !(args.disable_flood_control || args.disable_ip_origin_check);
-    let server = Server::new(port, cert, state, flood_control, args.enable_metrics);
+    let server = Server::new(port, cert, state, flood_control, args.enable_metrics, args.strict_sni);
     let server_handle = server.handle();
 
     info!("Notifying the server that we have finished starting up the client...");
