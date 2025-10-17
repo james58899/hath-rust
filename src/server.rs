@@ -274,7 +274,12 @@ impl ParsedCert {
                 e
             })
         }) {
-            Ok(leaf_cert) => leaf_cert,
+            Ok(leaf_cert) => {
+                // Log valid DNS names from the certificate
+                let dns_names: Vec<&str> = leaf_cert.borrow_dependent().valid_dns_names().collect();
+                info!("Certificate DNS names: {:?}", dns_names);
+                leaf_cert
+            },
             Err(_) => return None,
         };
 
