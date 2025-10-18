@@ -19,10 +19,12 @@ use log::{info, warn};
 use p12::PFX;
 use rustls::{
     ServerConfig,
+    client::verify_server_name,
     compress::CompressionCache,
-    crypto::aws_lc_rs::Ticketer,
-    pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer},
-    server::NoServerSessionStorage,
+    crypto::{CryptoProvider, aws_lc_rs::Ticketer},
+    pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer, ServerName},
+    server::{ClientHello, NoServerSessionStorage, ParsedCertificate, ResolvesServerCert},
+    sign::CertifiedKey,
 };
 use tokio::{
     net::{TcpListener, TcpSocket, TcpStream},
@@ -46,12 +48,15 @@ pub struct Server {
 pub struct ServerHandle {
     shutdown: AtomicBool,
     shutdown_notify: Notify,
-    ssl_config: ArcSwap<ServerConfig>,
+    cert_store: Arc<CertStore>,
 }
 
 impl Server {
-    pub fn new(port: u16, cert: ParsedCert, data: AppState, flood_control: bool, enable_metrics: bool) -> Self {
-        let handle = Arc::new(ServerHandle::new(create_ssl_config(cert)));
+    pub fn new(port: u16, cert: ParsedCert, data: AppState, flood_control: bool, enable_metrics: bool, sni_strict: bool) -> Self {
+        let provider = Arc::new(ssl_provider());
+        let cert_store = Arc::new(CertStore::new(provider.clone(), cert, sni_strict));
+        let ssl_config = Arc::new(create_ssl_config(provider, cert_store.clone()));
+        let handle = Arc::new(ServerHandle::new(cert_store));
         let mut listener = bind(SocketAddr::from(([0, 0, 0, 0], port)));
 
         let mut http = http1::Builder::new();
@@ -97,13 +102,13 @@ impl Server {
                 }
 
                 // Process connection
-                let handle = handle.clone();
+                let ssl_config = ssl_config.clone();
                 let http = http.clone();
                 let service = Extension(ClientAddr(addr)).layer(router.clone());
                 let mut shutdown_rx = shutdown_tx.subscribe();
                 tokio::spawn(async move {
                     // TLS handshake
-                    let acceptor = TlsAcceptor::from(handle.ssl_config.load().clone());
+                    let acceptor = TlsAcceptor::from(ssl_config);
                     let ssl_stream = match timeout(Duration::from_secs(10), acceptor.accept(stream)).await {
                         Ok(Ok(s)) => s,
                         _ => return, // Handshake timeout or error
@@ -151,17 +156,16 @@ impl Server {
 }
 
 impl ServerHandle {
-    fn new(config: ServerConfig) -> Self {
+    fn new(cert_store: Arc<CertStore>) -> Self {
         Self {
             shutdown: AtomicBool::new(false),
             shutdown_notify: Notify::new(),
-            ssl_config: ArcSwap::new(Arc::new(config)),
+            cert_store,
         }
     }
 
-    pub fn update_cert(&self, cert: ParsedCert) {
-        let config = create_ssl_config(cert);
-        self.ssl_config.store(Arc::new(config));
+    pub fn update_cert(&self, cert: ParsedCert) -> Result<(), rustls::Error> {
+        self.cert_store.update(cert)
     }
 
     fn shutdown(&self) {
@@ -237,14 +241,12 @@ impl ParsedCert {
     }
 }
 
-pub fn create_ssl_config(cert: ParsedCert) -> ServerConfig {
-    // TODO error handle
-    let mut config = ServerConfig::builder_with_provider(ssl_provider().into())
+fn create_ssl_config(provider: Arc<CryptoProvider>, cert_store: Arc<CertStore>) -> ServerConfig {
+    let mut config = ServerConfig::builder_with_provider(provider)
         .with_safe_default_protocol_versions()
         .unwrap()
         .with_no_client_auth()
-        .with_single_cert(cert.certs, cert.key)
-        .unwrap();
+        .with_cert_resolver(cert_store);
 
     // Prefer ChaCha20 on non-AES hardware.
     config.ignore_client_order = true;
@@ -256,6 +258,41 @@ pub fn create_ssl_config(cert: ParsedCert) -> ServerConfig {
     config.cert_compression_cache = CompressionCache::new(2).into(); // 1 cert * 2 compression algorithms
 
     config
+}
+
+#[derive(Debug)]
+struct CertStore {
+    provider: Arc<CryptoProvider>,
+    cert: ArcSwap<CertifiedKey>,
+    strict: bool,
+}
+
+impl CertStore {
+    fn new(provider: Arc<CryptoProvider>, cert: ParsedCert, strict: bool) -> Self {
+        let cert = ArcSwap::new(CertifiedKey::from_der(cert.certs, cert.key, &provider).unwrap().into());
+        Self { provider, cert, strict }
+    }
+
+    fn update(&self, cert: ParsedCert) -> Result<(), rustls::Error> {
+        let cert = CertifiedKey::from_der(cert.certs, cert.key, &self.provider)?;
+        self.cert.store(cert.into());
+        Ok(())
+    }
+}
+
+impl ResolvesServerCert for CertStore {
+    fn resolve(&self, client_hello: ClientHello<'_>) -> Option<Arc<CertifiedKey>> {
+        let certs = self.cert.load();
+        if self.strict {
+            let server_name: ServerName = client_hello.server_name()?.try_into().ok()?;
+            let cert = certs.end_entity_cert().and_then(ParsedCertificate::try_from).ok()?;
+            if verify_server_name(&cert, &server_name).is_err() {
+                return None; // SNI check fail
+            }
+        }
+
+        Some(certs.clone())
+    }
 }
 
 struct FloodControl {

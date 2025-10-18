@@ -131,6 +131,10 @@ struct Args {
     /// Enable metrics endpoint
     #[arg(long, default_value_t = false)]
     enable_metrics: bool,
+
+    /// Enable strict SNI checking. Reject connections with SNI mismatches to avoid being discovered by scanners. (May reduce quality)
+    #[arg(long, default_value_t = false)]
+    sni_strict: bool,
 }
 
 type DownloadState = Mutex<HashMap<[u8; 20], (watch::Receiver<Option<Arc<TempPath>>>, Arc<watch::Sender<u64>>)>>;
@@ -242,7 +246,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         metrics: metrics.clone(),
     };
     let flood_control = !(args.disable_flood_control || args.disable_ip_origin_check);
-    let server = Server::new(port, cert, state, flood_control, args.enable_metrics);
+    let server = Server::new(port, cert, state, flood_control, args.enable_metrics, args.sni_strict);
     let server_handle = server.handle();
 
     info!("Notifying the server that we have finished starting up the client...");
@@ -277,7 +281,17 @@ async fn main() -> Result<(), Box<dyn Error>> {
             match command {
                 Command::ReloadCert => {
                     match client2.get_cert().await {
-                        Some(cert) => server_handle.update_cert(cert),
+                        Some(cert) => {
+                            if let Err(err) = server_handle.update_cert(cert) {
+                                error!("Update SSL cert fail: {}", err);
+                                // Retry after 10s
+                                let tx2 = tx.clone();
+                                tokio::spawn(async move {
+                                    sleep(Duration::from_secs(10)).await;
+                                    _ = tx2.send(Command::ReloadCert).await;
+                                });
+                            }
+                        }
                         None => {
                             error!("Fetch SSL cert fail");
                             // Retry after 10s
