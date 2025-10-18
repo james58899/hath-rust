@@ -1,6 +1,6 @@
 [package]
 name = "hath-rust"
-version = "1.12.2"
+version = "1.13.0"
 edition = "2024"
 description = "The unofficial Hentai@Home client written in Rust."
 license = "GPL-3.0-or-later"
