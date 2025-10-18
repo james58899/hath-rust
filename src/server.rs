@@ -19,13 +19,13 @@ use log::{info, warn};
 use p12::PFX;
 use rustls::{
     ServerConfig,
+    client::verify_server_name,
     compress::CompressionCache,
-    crypto::aws_lc_rs::Ticketer,
-    pki_types::{CertificateDer, PrivatePkcs8KeyDer, ServerName},
-    server::{ClientHello, NoServerSessionStorage, ResolvesServerCert},
+    crypto::{CryptoProvider, aws_lc_rs::Ticketer},
+    pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer, ServerName},
+    server::{ClientHello, NoServerSessionStorage, ParsedCertificate, ResolvesServerCert},
     sign::CertifiedKey,
 };
-use self_cell::self_cell;
 use tokio::{
     net::{TcpListener, TcpSocket, TcpStream},
     sync::{Notify, watch},
@@ -34,7 +34,6 @@ use tokio::{
 };
 use tokio_rustls::TlsAcceptor;
 use tower::{Layer, Service};
-use webpki::EndEntityCert;
 
 use crate::{
     AppState, middleware, route,
@@ -49,14 +48,15 @@ pub struct Server {
 pub struct ServerHandle {
     shutdown: AtomicBool,
     shutdown_notify: Notify,
-    cert_resolver: Arc<CertResolver>,
+    cert_store: Arc<CertStore>,
 }
 
 impl Server {
-    pub fn new(port: u16, cert: ParsedCert, data: AppState, flood_control: bool, enable_metrics: bool, strict_sni: bool) -> Self {
-        let resolver = Arc::new(CertResolver::new(cert, strict_sni));
-        let ssl_config = Arc::new(create_ssl_config(resolver.clone()));
-        let handle = Arc::new(ServerHandle::new(resolver));
+    pub fn new(port: u16, cert: ParsedCert, data: AppState, flood_control: bool, enable_metrics: bool, sni_strict: bool) -> Self {
+        let provider = Arc::new(ssl_provider());
+        let cert_store = Arc::new(CertStore::new(provider.clone(), cert, sni_strict));
+        let ssl_config = Arc::new(create_ssl_config(provider, cert_store.clone()));
+        let handle = Arc::new(ServerHandle::new(cert_store));
         let mut listener = bind(SocketAddr::from(([0, 0, 0, 0], port)));
 
         let mut http = http1::Builder::new();
@@ -156,16 +156,16 @@ impl Server {
 }
 
 impl ServerHandle {
-    fn new(cert_resolver: Arc<CertResolver>) -> Self {
+    fn new(cert_store: Arc<CertStore>) -> Self {
         Self {
             shutdown: AtomicBool::new(false),
             shutdown_notify: Notify::new(),
-            cert_resolver,
+            cert_store,
         }
     }
 
-    pub fn update_cert(&self, cert: ParsedCert) {
-        self.cert_resolver.update_certificate(cert);
+    pub fn update_cert(&self, cert: ParsedCert) -> Result<(), rustls::Error> {
+        self.cert_store.update(cert)
     }
 
     fn shutdown(&self) {
@@ -226,27 +226,9 @@ async fn accept(listener: &mut TcpListener) -> (TcpStream, SocketAddr) {
     }
 }
 
-self_cell!(
-    struct LeafCert {
-        owner: CertificateDer<'static>,
-
-        #[covariant]
-        dependent: EndEntityCert,
-    }
-);
-
 pub struct ParsedCert {
-    certified_key: Arc<CertifiedKey>,
-    leaf_cert: LeafCert,
-}
-
-impl std::fmt::Debug for ParsedCert {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("ParsedCert")
-            .field("certified_key", &self.certified_key)
-            .field("leaf_cert", &"<omitted>")
-            .finish()
-    }
+    certs: Vec<CertificateDer<'static>>,
+    key: PrivateKeyDer<'static>,
 }
 
 impl ParsedCert {
@@ -255,45 +237,16 @@ impl ParsedCert {
         let key = PrivatePkcs8KeyDer::from(pfx.key_bags(password).ok()?.pop()?).into();
         let certs: Vec<CertificateDer> = pfx.cert_x509_bags(password).ok()?.into_iter().map(CertificateDer::from).collect();
 
-        // Create CertifiedKey from the parsed components
-        let certified_key = match CertifiedKey::from_der(certs.clone(), key, &ssl_provider()) {
-            Ok(key) => Arc::new(key),
-            Err(e) => {
-                warn!("Failed to create CertifiedKey: {}", e);
-                return None;
-            }
-        };
-
-        // Store the first certificate for SNI validation
-        let leaf_cert_der = certs.into_iter().next()?;
-
-        // Create LeafCert (CertificateDER + EndEntityCert)
-        let leaf_cert = match LeafCert::try_new(leaf_cert_der, |cert_der| {
-            EndEntityCert::try_from(cert_der).map_err(|e| {
-                warn!("Failed to create EndEntityCert: {}", e);
-                e
-            })
-        }) {
-            Ok(leaf_cert) => {
-                // Log valid DNS names from the certificate
-                let dns_names: Vec<&str> = leaf_cert.borrow_dependent().valid_dns_names().collect();
-                info!("Certificate DNS names: {:?}", dns_names);
-                leaf_cert
-            },
-            Err(_) => return None,
-        };
-
-        Some(ParsedCert { certified_key, leaf_cert })
+        Some(ParsedCert { certs, key })
     }
 }
 
-pub(crate) fn create_ssl_config(resolver: Arc<CertResolver>) -> ServerConfig {
-    // TODO error handle
-    let mut config = ServerConfig::builder_with_provider(ssl_provider().into())
+fn create_ssl_config(provider: Arc<CryptoProvider>, cert_store: Arc<CertStore>) -> ServerConfig {
+    let mut config = ServerConfig::builder_with_provider(provider)
         .with_safe_default_protocol_versions()
         .unwrap()
         .with_no_client_auth()
-        .with_cert_resolver(resolver);
+        .with_cert_resolver(cert_store);
 
     // Prefer ChaCha20 on non-AES hardware.
     config.ignore_client_order = true;
@@ -308,54 +261,37 @@ pub(crate) fn create_ssl_config(resolver: Arc<CertResolver>) -> ServerConfig {
 }
 
 #[derive(Debug)]
-pub(crate) struct CertResolver {
-    parsed_cert: ArcSwap<ParsedCert>,
-    strict_sni: bool,
+struct CertStore {
+    provider: Arc<CryptoProvider>,
+    cert: ArcSwap<CertifiedKey>,
+    strict: bool,
 }
 
-impl CertResolver {
-    fn new(parsed_cert: ParsedCert, strict_sni: bool) -> Self {
-        Self {
-            parsed_cert: ArcSwap::new(Arc::new(parsed_cert)),
-            strict_sni,
-        }
+impl CertStore {
+    fn new(provider: Arc<CryptoProvider>, cert: ParsedCert, strict: bool) -> Self {
+        let cert = ArcSwap::new(CertifiedKey::from_der(cert.certs, cert.key, &provider).unwrap().into());
+        Self { provider, cert, strict }
     }
 
-    fn update_certificate(&self, parsed_cert: ParsedCert) {
-        self.parsed_cert.store(Arc::new(parsed_cert));
+    fn update(&self, cert: ParsedCert) -> Result<(), rustls::Error> {
+        let cert = CertifiedKey::from_der(cert.certs, cert.key, &self.provider)?;
+        self.cert.store(cert.into());
+        Ok(())
     }
 }
 
-impl ResolvesServerCert for CertResolver {
-    fn resolve(&self, client_hello: ClientHello) -> Option<Arc<CertifiedKey>> {
-        let parsed_cert = self.parsed_cert.load();
-
-        if self.strict_sni {
-            // Get the SNI from ClientHello
-            // RFC 6066: SNI must be ASCII-encoded
-            let sni = client_hello.server_name()?;
-            let sni_bytes: &[u8] = sni.as_ref();
-            if !sni_bytes.is_ascii() {
-                warn!("SNI validation failed: non-ASCII characters not allowed per RFC 6066");
-                return None;
-            }
-            let sni_str = unsafe { std::str::from_utf8_unchecked(sni_bytes) };
-            let server_name = ServerName::try_from(sni_str).ok()?;
-
-            // Use pre-created EndEntityCert from LeafCert, validate SNI against certificate
-            if parsed_cert
-                .leaf_cert
-                .borrow_dependent()
-                .verify_is_valid_for_subject_name(&server_name)
-                .is_err()
-            {
-                warn!("SNI validation failed: '{}' does not match certificate", sni_str);
-                return None;
+impl ResolvesServerCert for CertStore {
+    fn resolve(&self, client_hello: ClientHello<'_>) -> Option<Arc<CertifiedKey>> {
+        let certs = self.cert.load();
+        if self.strict {
+            let server_name: ServerName = client_hello.server_name()?.try_into().ok()?;
+            let cert = certs.end_entity_cert().and_then(ParsedCertificate::try_from).ok()?;
+            if verify_server_name(&cert, &server_name).is_err() {
+                return None; // SNI check fail
             }
         }
 
-        // Always return the certificate - let rustls handle signature scheme validation
-        Some(parsed_cert.certified_key.clone())
+        Some(certs.clone())
     }
 }
 

@@ -15,7 +15,7 @@ Features not included in the official.
 * Using ChaCha20 on hardware without AES acceleration
 * Send filename to browser[^filename]
 * Monitoring endpoints ([wiki](https://github.com/james58899/hath-rust/wiki/Monitoring))
-* Strict SNI validation for enhanced security (`--strict-sni` CLI argument)
+* Strict SNI checking (Default off, may reduce quality)
 
 ### Works
 Features that are included in the official and are working.
