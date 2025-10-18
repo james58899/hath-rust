@@ -346,7 +346,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             }
 
             // Alive check every 110s
-            if counter % 11 == 0 && !client3.still_alive(false).await {
+            if counter.is_multiple_of(11) && !client3.still_alive(false).await {
                 let _ = shutdown_send.send(()); // Check fail, shutdown.
             }
 
