@@ -58,8 +58,9 @@ impl Server {
     pub fn new(port: u16, cert: ParsedCert, data: AppState, flood_control: bool, enable_metrics: bool, sni_strict: bool) -> Self {
         let provider = Arc::new(ssl_provider());
         let cert_store = Arc::new(CertStore::new(provider.clone(), cert, sni_strict));
-        let ssl_config = Arc::new(create_ssl_config(provider, cert_store.clone()));
-        let handle = Arc::new(ServerHandle::new(cert_store));
+        let handle = Arc::new(ServerHandle::new(cert_store.clone()));
+
+        let acceptor = TlsAcceptor::from(Arc::new(create_ssl_config(provider, cert_store)));
         let mut listener = bind(SocketAddr::from(([0, 0, 0, 0], port)));
 
         let mut http = http1::Builder::new();
@@ -85,7 +86,7 @@ impl Server {
             let (shutdown_tx, _) = watch::channel(());
             let mut flood_control = if flood_control { Some(FloodControl::new()) } else { None };
             loop {
-                if handle.shutdown.load(Ordering::Relaxed) {
+                if handle2.shutdown.load(Ordering::Relaxed) {
                     break;
                 }
 
@@ -93,7 +94,7 @@ impl Server {
                 let (stream, addr) = tokio::select! {
                     biased;
                     result = accept(&mut listener) => result,
-                    _ = handle.shutdown_notify.notified() => break, // Shutdown
+                    _ = handle2.shutdown_notify.notified() => break, // Shutdown
                 };
 
                 // Flood control
@@ -105,13 +106,12 @@ impl Server {
                 }
 
                 // Process connection
-                let ssl_config = ssl_config.clone();
+                let acceptor = acceptor.clone();
                 let http = http.clone();
                 let service = Extension(ClientAddr(addr)).layer(router.clone());
                 let mut shutdown_rx = shutdown_tx.subscribe();
                 tokio::spawn(async move {
                     // TLS handshake
-                    let acceptor = TlsAcceptor::from(ssl_config);
                     let ssl_stream = match timeout(Duration::from_secs(10), acceptor.accept(stream)).await {
                         Ok(Ok(s)) => s,
                         _ => return, // Handshake timeout or error
@@ -144,7 +144,7 @@ impl Server {
             let _ = timeout(Duration::from_secs(15), shutdown_tx.closed()).await;
         });
 
-        Self { handle: handle2, task }
+        Self { handle, task }
     }
 
     pub fn handle(&self) -> Arc<ServerHandle> {
