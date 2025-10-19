@@ -14,7 +14,10 @@ use arc_swap::ArcSwap;
 use axum::{Extension, Router, extract::FromRequestParts, http::request::Parts, routing::get};
 use futures::pin_mut;
 use hyper::server::conn::http1;
-use hyper_util::rt::{TokioIo, TokioTimer};
+use hyper_util::{
+    rt::{TokioIo, TokioTimer},
+    service::TowerToHyperService,
+};
 use log::{info, warn};
 use p12::PFX;
 use rustls::{
@@ -33,7 +36,7 @@ use tokio::{
     time::timeout,
 };
 use tokio_rustls::TlsAcceptor;
-use tower::{Layer, Service};
+use tower::Layer;
 
 use crate::{
     AppState, middleware, route,
@@ -119,7 +122,7 @@ impl Server {
 
                     // Process request
                     let stream = TokioIo::new(ssl_stream); // Tokio to hyper trait
-                    let service = hyper::service::service_fn(move |r| service.clone().call(r)); // Tower to hyper trait
+                    let service = TowerToHyperService::new(service); // Tower to hyper trait
                     let fut = timeout(Duration::from_secs(181), http.serve_connection(stream, service));
                     pin_mut!(fut);
                     tokio::select! {
