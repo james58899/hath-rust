@@ -41,7 +41,7 @@ jobs:
           FROM scratch AS binary-arm
           COPY artifacts/hath-rust-armv7-unknown-linux-gnueabihf/hath-rust /hath-rust
           FROM binary-\$TARGETARCH AS binary
-          FROM debian:bookworm-slim
+          FROM debian:trixie-slim
           WORKDIR /hath
           COPY --from=binary --chmod=755 /hath-rust /usr/local/bin/hath-rust
           ENTRYPOINT ["hath-rust"]
