@@ -55,7 +55,7 @@ impl Server {
         let handle = Arc::new(ServerHandle::new(cert_store.clone()));
 
         let acceptor = TlsAcceptor::from(Arc::new(create_ssl_config(provider, cert_store)));
-        let mut listener = bind(SocketAddr::from(([0, 0, 0, 0], port)));
+        let listener = bind(SocketAddr::from(([0, 0, 0, 0], port)));
 
         let mut http = http1::Builder::new();
         http.keep_alive(false)
@@ -74,69 +74,8 @@ impl Server {
         router = middleware::register_layer(router, &data);
         let router = router.with_state(Arc::new(data));
 
-        let handle2 = handle.clone();
         // Accept loop
-        let task = tokio::spawn(async move {
-            let (shutdown_tx, _) = watch::channel(());
-            let mut flood_control = if flood_control { Some(FloodControl::new()) } else { None };
-            loop {
-                if handle2.shutdown.load(Ordering::Relaxed) {
-                    break;
-                }
-
-                // Wait for new tcp connection
-                let (stream, addr) = tokio::select! {
-                    biased;
-                    result = accept(&mut listener) => result,
-                    _ = handle2.shutdown_notify.notified() => break, // Shutdown
-                };
-
-                // Flood control
-                if flood_control.as_mut().is_some_and(|fc| fc.hit(addr)) {
-                    // Flood detected
-                    let _ = stream.set_linger(Some(Duration::ZERO)); // RST connection
-                    drop(stream);
-                    continue;
-                }
-
-                // Process connection
-                let acceptor = acceptor.clone();
-                let http = http.clone();
-                let service = Extension(ClientAddr(addr)).layer(router.clone());
-                let mut shutdown_rx = shutdown_tx.subscribe();
-                tokio::spawn(async move {
-                    // TLS handshake
-                    let ssl_stream = match timeout(Duration::from_secs(10), acceptor.accept(stream)).await {
-                        Ok(Ok(s)) => s,
-                        _ => return, // Handshake timeout or error
-                    };
-
-                    // Disable nodelay after handshake
-                    let _ = ssl_stream.get_ref().0.set_nodelay(false);
-
-                    // Process request
-                    let stream = TokioIo::new(ssl_stream); // Tokio to hyper trait
-                    let service = TowerToHyperService::new(service); // Tower to hyper trait
-                    let fut = timeout(Duration::from_secs(181), http.serve_connection(stream, service));
-                    pin_mut!(fut);
-                    tokio::select! {
-                        biased;
-                        _ = &mut fut => (),
-                        _ = shutdown_rx.changed() => { // Graceful shutdown
-                            let _ = timeout(Duration::from_secs(10), fut).await;
-                        },
-                    };
-                });
-            }
-
-            // Close listener
-            drop(listener);
-            info!("Server listener closed!");
-
-            // Wait connection complated or timeout
-            shutdown_tx.send_replace(()); // Notify all connection
-            let _ = timeout(Duration::from_secs(15), shutdown_tx.closed()).await;
-        });
+        let task = tokio::spawn(accept_loop(handle.clone(), listener, acceptor, http, router, flood_control));
 
         Self { handle, task }
     }
@@ -196,6 +135,75 @@ async fn accept(listener: &mut TcpListener) -> (TcpStream, SocketAddr) {
             Err(_) => tokio::time::sleep(Duration::from_millis(50)).await, // Too many open files, retry.
         }
     }
+}
+
+async fn accept_loop(
+    handle: Arc<ServerHandle>,
+    mut listener: TcpListener,
+    acceptor: TlsAcceptor,
+    http: http1::Builder,
+    router: Router,
+    flood_control: bool,
+) {
+    let (shutdown_tx, _) = watch::channel(());
+    let mut flood_control = if flood_control { Some(FloodControl::new()) } else { None };
+    loop {
+        if handle.shutdown.load(Ordering::Relaxed) {
+            break;
+        }
+
+        // Wait for new tcp connection
+        let (stream, addr) = tokio::select! {
+            biased;
+            result = accept(&mut listener) => result,
+            _ = handle.shutdown_notify.notified() => break, // Shutdown
+        };
+
+        // Flood control
+        if flood_control.as_mut().is_some_and(|fc| fc.hit(addr)) {
+            // Flood detected
+            let _ = stream.set_linger(Some(Duration::ZERO)); // RST connection
+            drop(stream);
+            continue;
+        }
+
+        // Process connection
+        let acceptor = acceptor.clone();
+        let http = http.clone();
+        let service = Extension(ClientAddr(addr)).layer(router.clone());
+        let mut shutdown_rx = shutdown_tx.subscribe();
+        tokio::spawn(async move {
+            // TLS handshake
+            let ssl_stream = match timeout(Duration::from_secs(10), acceptor.accept(stream)).await {
+                Ok(Ok(s)) => s,
+                _ => return, // Handshake timeout or error
+            };
+
+            // Disable nodelay after handshake
+            let _ = ssl_stream.get_ref().0.set_nodelay(false);
+
+            // Process request
+            let stream = TokioIo::new(ssl_stream); // Tokio to hyper trait
+            let service = TowerToHyperService::new(service); // Tower to hyper trait
+            let fut = timeout(Duration::from_secs(181), http.serve_connection(stream, service));
+            pin_mut!(fut);
+            tokio::select! {
+                biased;
+                _ = &mut fut => (),
+                _ = shutdown_rx.changed() => { // Graceful shutdown
+                    let _ = timeout(Duration::from_secs(10), fut).await;
+                },
+            };
+        });
+    }
+
+    // Close listener
+    drop(listener);
+    info!("Server listener closed!");
+
+    // Wait connection complated or timeout
+    shutdown_tx.send_replace(()); // Notify all connection
+    let _ = timeout(Duration::from_secs(15), shutdown_tx.closed()).await;
 }
 
 pub struct ServerHandle {
