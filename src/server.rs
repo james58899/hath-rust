@@ -48,12 +48,6 @@ pub struct Server {
     task: JoinHandle<()>,
 }
 
-pub struct ServerHandle {
-    shutdown: AtomicBool,
-    shutdown_notify: Notify,
-    cert_store: Arc<CertStore>,
-}
-
 impl Server {
     pub fn new(port: u16, cert: ParsedCert, data: AppState, flood_control: bool, enable_metrics: bool, sni_strict: bool) -> Self {
         let provider = Arc::new(ssl_provider());
@@ -158,6 +152,58 @@ impl Server {
     }
 }
 
+fn create_ssl_config(provider: Arc<CryptoProvider>, cert_store: Arc<CertStore>) -> ServerConfig {
+    let mut config = ServerConfig::builder_with_provider(provider)
+        .with_safe_default_protocol_versions()
+        .unwrap()
+        .with_no_client_auth()
+        .with_cert_resolver(cert_store);
+
+    // Prefer ChaCha20 on non-AES hardware.
+    config.ignore_client_order = true;
+    config.prioritize_chacha = aes_support();
+    // Only support ticket resumption.
+    config.session_storage = Arc::new(NoServerSessionStorage {});
+    config.ticketer = Ticketer::new().unwrap();
+    config.send_tls13_tickets = 1;
+    config.cert_compression_cache = CompressionCache::new(2).into(); // 1 cert * 2 compression algorithms
+
+    config
+}
+
+fn bind(addr: SocketAddr) -> TcpListener {
+    let socket = match addr {
+        SocketAddr::V4(_) => TcpSocket::new_v4(),
+        SocketAddr::V6(_) => TcpSocket::new_v6(),
+    }
+    .expect("Server listener socket create error.");
+
+    let _ = socket.set_reuseaddr(true); // Without this need wait all connection close before restart
+    let _ = socket.set_keepalive(true);
+    let _ = socket.set_nodelay(true);
+
+    socket.bind(addr).expect("Server listener bind error.");
+    socket
+        .listen(512)
+        .inspect(|_| info!("Server is listen on {addr}"))
+        .expect("Server listener listen error.")
+}
+
+async fn accept(listener: &mut TcpListener) -> (TcpStream, SocketAddr) {
+    loop {
+        match listener.accept().await {
+            Ok(value) => return value,
+            Err(_) => tokio::time::sleep(Duration::from_millis(50)).await, // Too many open files, retry.
+        }
+    }
+}
+
+pub struct ServerHandle {
+    shutdown: AtomicBool,
+    shutdown_notify: Notify,
+    cert_store: Arc<CertStore>,
+}
+
 impl ServerHandle {
     fn new(cert_store: Arc<CertStore>) -> Self {
         Self {
@@ -202,33 +248,6 @@ where
     }
 }
 
-fn bind(addr: SocketAddr) -> TcpListener {
-    let socket = match addr {
-        SocketAddr::V4(_) => TcpSocket::new_v4(),
-        SocketAddr::V6(_) => TcpSocket::new_v6(),
-    }
-    .expect("Server listener socket create error.");
-
-    let _ = socket.set_reuseaddr(true); // Without this need wait all connection close before restart
-    let _ = socket.set_keepalive(true);
-    let _ = socket.set_nodelay(true);
-
-    socket.bind(addr).expect("Server listener bind error.");
-    socket
-        .listen(512)
-        .inspect(|_| info!("Server is listen on {addr}"))
-        .expect("Server listener listen error.")
-}
-
-async fn accept(listener: &mut TcpListener) -> (TcpStream, SocketAddr) {
-    loop {
-        match listener.accept().await {
-            Ok(value) => return value,
-            Err(_) => tokio::time::sleep(Duration::from_millis(50)).await, // Too many open files, retry.
-        }
-    }
-}
-
 pub struct ParsedCert {
     certs: Vec<CertificateDer<'static>>,
     key: PrivateKeyDer<'static>,
@@ -242,25 +261,6 @@ impl ParsedCert {
 
         Some(ParsedCert { certs, key })
     }
-}
-
-fn create_ssl_config(provider: Arc<CryptoProvider>, cert_store: Arc<CertStore>) -> ServerConfig {
-    let mut config = ServerConfig::builder_with_provider(provider)
-        .with_safe_default_protocol_versions()
-        .unwrap()
-        .with_no_client_auth()
-        .with_cert_resolver(cert_store);
-
-    // Prefer ChaCha20 on non-AES hardware.
-    config.ignore_client_order = true;
-    config.prioritize_chacha = aes_support();
-    // Only support ticket resumption.
-    config.session_storage = Arc::new(NoServerSessionStorage {});
-    config.ticketer = Ticketer::new().unwrap();
-    config.send_tls13_tickets = 1;
-    config.cert_compression_cache = CompressionCache::new(2).into(); // 1 cert * 2 compression algorithms
-
-    config
 }
 
 #[derive(Debug)]
