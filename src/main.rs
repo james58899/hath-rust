@@ -135,6 +135,10 @@ struct Args {
     /// Enable strict SNI checking. Reject connections with SNI mismatches to avoid being discovered by scanners. (May reduce quality)
     #[arg(long, default_value_t = false)]
     sni_strict: bool,
+
+    /// Experimental HTTP3
+    #[arg(long, default_value_t = false)]
+    enable_h3: bool,
 }
 
 type DownloadState = Mutex<HashMap<[u8; 20], (watch::Receiver<Option<Arc<TempPath>>>, Arc<watch::Sender<u64>>)>>;
@@ -246,7 +250,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         metrics: metrics.clone(),
     };
     let flood_control = !(args.disable_flood_control || args.disable_ip_origin_check);
-    let server = Server::new(port, cert, state, flood_control, args.enable_metrics, args.sni_strict);
+    let server = Server::new(port, cert, state, flood_control, args.enable_metrics, args.sni_strict, args.enable_h3);
     let server_handle = server.handle();
 
     info!("Notifying the server that we have finished starting up the client...");
