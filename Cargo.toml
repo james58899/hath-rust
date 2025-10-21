@@ -20,8 +20,11 @@ fastrand = "2.3.0"
 filesize = "0.2"
 filetime = "0.2"
 futures = "0.3"
+h3 = "0.0.8"
+h3-quinn = "0.0.10"
 http-body = "1.0"
 http-body-util = "0.1"
+httpdate = "1.0.3"
 hyper = { version = "1.6.0", features = ["http1", "server"] }
 hyper-util = { version = "0.1.17", features = ["tokio", "service"] }
 idna_adapter = "~1.0.0" # Pin 1.0 to disable url idna support
@@ -32,6 +35,7 @@ p12 = "0.6.3"
 parking_lot = { version = "0.12", features = ["hardware-lock-elision"] }
 pin-project-lite = "0.2"
 prometheus-client = "0.24.0"
+quinn = { version = "0.11.9", default-features = false, features = ["bloom", "runtime-tokio", "rustls-aws-lc-rs"] }
 regex-lite = "0.1.6"
 reqwest = { version = "0.12.23", default-features = false, features = ["rustls-tls-manual-roots-no-provider", "stream", "socks"] }
 rmp-serde = "1.3.0"
@@ -44,6 +48,7 @@ tokio-rustls = { version = "0.26.2", default-features = false, features = ["tls1
 tokio-stream = { version = "0.1", default-features = false, features = ["fs"] }
 tokio-util = { version = "0.7.16", features = ["io"] }
 tower = { version = "0.5.2", features = ["timeout"] }
+tower-http = { version = "0.6.6", features = ["set-header"] }
 unicode-segmentation = "1.12.0"
 webpki-roots = "1.0.2"
 
