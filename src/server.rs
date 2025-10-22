@@ -19,11 +19,15 @@ use axum::{
     response::Response,
     routing::get,
 };
-use futures::{future::join, pin_mut};
+use futures::pin_mut;
 use h3::{error::Code, server::Connection};
 use h3_quinn::quinn;
 use http_body_util::BodyExt;
-use hyper::{header::{ALT_SVC, CONNECTION, DATE}, server::conn::http1, Version};
+use hyper::{
+    Version,
+    header::{ALT_SVC, CONNECTION, DATE},
+    server::conn::http1,
+};
 use hyper_util::{
     rt::{TokioIo, TokioTimer},
     service::TowerToHyperService,
@@ -57,6 +61,7 @@ use crate::{
 };
 
 mod date_header;
+mod h3_quinn;
 
 pub struct Server {
     handle: Arc<ServerHandle>,
@@ -318,19 +323,21 @@ async fn accept_loop_h3(handle: Arc<ServerHandle>, endpoint: Endpoint, router: R
             };
 
             // Request loop
+            let (close_wait, _) = watch::channel(());
             loop {
                 let resolver = tokio::select! {
                     biased;
-                    conn = h3_conn.accept() => conn,
+                    resolver = h3_conn.accept() => resolver,
                     _ = shutdown_rx.changed() => { // Graceful shutdown
-                        let _ = h3_conn.shutdown(1).await;
-                        continue;
+                        let _ = h3_conn.shutdown(1).await; // Send GOAWAY
+                        close_wait.closed().await; // Drop h3_conn will reset request, wait for request complete
+                        break;
                     },
                 };
                 match resolver {
                     Ok(Some(resolver)) => {
                         let router = router.clone();
-                        let shutdown_rx = shutdown_rx.clone();
+                        let request_done = close_wait.subscribe();
                         tokio::spawn(async move {
                             let (req, mut stream) = match resolver.resolve_request().await {
                                 Ok(res) => res,
@@ -388,8 +395,7 @@ async fn accept_loop_h3(handle: Arc<ServerHandle>, endpoint: Endpoint, router: R
                                 }
                             }
                             let _ = stream.finish().await;
-                            // TODO Find a way to wait send buffer empty before return
-                            drop(shutdown_rx); // Hold shutdown channel
+                            drop(request_done); // Notify request complete
                         });
                     }
                     // indicating that the remote sent a goaway frame
@@ -407,7 +413,7 @@ async fn accept_loop_h3(handle: Arc<ServerHandle>, endpoint: Endpoint, router: R
 
     // Wait connection complated or timeout
     shutdown_tx.send_replace(()); // Notify all connection
-    let _ = timeout(Duration::from_secs(15), join(shutdown_tx.closed(), endpoint.wait_idle())).await;
+    let _ = timeout(Duration::from_secs(15), shutdown_tx.closed()).await;
     endpoint.close(0u8.into(), b"Shutdown");
 }
 
