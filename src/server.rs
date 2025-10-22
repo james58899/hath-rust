@@ -20,7 +20,7 @@ use axum::{
     routing::get,
 };
 use futures::pin_mut;
-use h3::server::Connection;
+use h3::{error::Code, server::Connection};
 use h3_quinn::quinn;
 use http_body_util::BodyExt;
 use hyper::{
@@ -33,6 +33,7 @@ use hyper_util::{
 };
 use log::{debug, error, info, warn};
 use p12::PFX;
+use parking_lot::Mutex;
 use quinn::{Endpoint, TransportConfig, crypto::rustls::QuicServerConfig};
 use rustls::{
     ServerConfig,
@@ -102,7 +103,7 @@ impl Server {
         let accept_task_h3 = if h3 {
             let quinn_config = create_quic_config(provider, cert_store);
             let endpoint = quinn::Endpoint::server(quinn_config, SocketAddr::from(([0, 0, 0, 0], port))).unwrap();
-            Some(tokio::spawn(accept_loop_h3(handle.clone(), endpoint, router)))
+            Some(tokio::spawn(accept_loop_h3(handle.clone(), endpoint, router, flood_control)))
         } else {
             None
         };
@@ -280,8 +281,13 @@ async fn accept_loop(
     let _ = timeout(Duration::from_secs(15), shutdown_tx.closed()).await;
 }
 
-async fn accept_loop_h3(handle: Arc<ServerHandle>, endpoint: Endpoint, router: Router) {
+async fn accept_loop_h3(handle: Arc<ServerHandle>, endpoint: Endpoint, router: Router, flood_control: bool) {
     let (shutdown_tx, _) = watch::channel(());
+    let flood_control = if flood_control {
+        Some(Arc::new(Mutex::new(FloodControl::new())))
+    } else {
+        None
+    };
 
     loop {
         if handle.shutdown.load(Ordering::Relaxed) {
@@ -297,11 +303,10 @@ async fn accept_loop_h3(handle: Arc<ServerHandle>, endpoint: Endpoint, router: R
 
         let addr = new_conn.remote_address();
 
-        // TODO h3 need flood control?
-
         // Process connection
         let router = router.clone();
         let mut shutdown_rx = shutdown_tx.subscribe();
+        let flood_control = flood_control.clone();
         tokio::spawn(async move {
             // QUIC handshake
             let conn = match new_conn.await {
@@ -339,6 +344,12 @@ async fn accept_loop_h3(handle: Arc<ServerHandle>, endpoint: Endpoint, router: R
                     _ => break,
                 };
 
+                // Flood control
+                let blocked = flood_control.as_ref().is_some_and(|fc| fc.lock().hit(addr));
+                if blocked {
+                    let _ = h3_conn.shutdown(0).await; // Send GOAWAY
+                }
+
                 // Process request
                 let router = router.clone();
                 let request_done = close_wait.subscribe();
@@ -351,6 +362,12 @@ async fn accept_loop_h3(handle: Arc<ServerHandle>, endpoint: Endpoint, router: R
                             return;
                         }
                     };
+
+                    if blocked {
+                        stream.stop_stream(Code::H3_REQUEST_REJECTED);
+                        return;
+                    }
+
                     let mut request = Request::builder().version(req.version()).method(req.method()).uri(req.uri());
                     *request.headers_mut().unwrap() = req.headers().clone();
                     let request = request.body(http_body_util::Empty::new()).unwrap(); // We don't read body
