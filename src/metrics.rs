@@ -25,8 +25,8 @@ pub const LABEL_CACHE_DOWNLOAD: CacheFetchLabels = CacheFetchLabels {
 pub struct Metrics {
     pub registry: Registry,
     pub cache_sent: Counter,
-    pub cache_sent_size: Counter,
-    pub cache_sent_duration: Histogram,
+    pub cache_sent_size: Family<Vec<(String, String)>, Counter>,
+    pub cache_sent_duration: Family<Vec<(String, String)>, Histogram>,
     pub cache_received: Counter,
     pub cache_received_size: Counter,
     pub cache_received_duration: Family<CacheFetchLabels, Histogram>,
@@ -47,8 +47,10 @@ impl Metrics {
 
         // Request metrics
         let cache_sent = Counter::default();
-        let cache_sent_size = Counter::default();
-        let cache_sent_duration = Histogram::new([0.01, 0.025, 0.05, 0.1, 0.2, 0.5, 1.0, 1.5, 2.0, 3.0, 5.0, 10.0, 30.0]);
+        let cache_sent_size = Family::<Vec<(String, String)>, Counter>::default();
+        let cache_sent_duration = Family::<Vec<(String, String)>, Histogram>::new_with_constructor(|| {
+            Histogram::new([0.01, 0.025, 0.05, 0.1, 0.2, 0.5, 1.0, 1.5, 2.0, 3.0, 5.0, 10.0, 30.0])
+        });
         let cache_received = Counter::default();
         let cache_received_size = Counter::default();
         let cache_received_duration = Family::<CacheFetchLabels, Histogram>::new_with_constructor(|| {
