@@ -9,7 +9,7 @@ use std::{
 use axum::{
     body::{Body, HttpBody},
     extract::Request,
-    http::{HeaderValue, Method, header::CONTENT_LENGTH},
+    http::{HeaderValue, Method, Version, header::CONTENT_LENGTH},
     response::Response,
 };
 use futures::future::BoxFuture;
@@ -71,10 +71,11 @@ where
             .unwrap_or_else(|| "-".into());
         let is_head = req.method() == Method::HEAD;
         let uri = req.uri();
+        let version = req.version();
         let request = if uri.query().is_none() {
-            format!("{} {} {:?}", req.method(), uri.path(), req.version())
+            format!("{} {} {:?}", req.method(), uri.path(), version)
         } else {
-            format!("{} {}?{} {:?}", req.method(), uri.path(), uri.query().unwrap(), req.version())
+            format!("{} {}?{} {:?}", req.method(), uri.path(), uri.query().unwrap(), version)
         };
 
         let fut = self.service.call(req);
@@ -98,6 +99,7 @@ where
                 size: 0,
                 start,
                 body_start: Instant::now(),
+                version,
                 metrics,
             }))
         })
@@ -114,6 +116,7 @@ pin_project! {
         size: u64,
         start: std::time::Instant,
         body_start: std::time::Instant,
+        version: Version,
         metrics: Arc<Metrics>,
     }
 
@@ -127,8 +130,9 @@ pin_project! {
                 this.start.elapsed().as_millis(),
                 this.size as f64 / max(this.body_start.elapsed().as_millis(), 1) as f64
             );
-            this.metrics.cache_sent_size.inc_by(this.size);
-            this.metrics.cache_sent_duration.observe(this.start.elapsed().as_secs_f64());
+            // TODO replace label with enum
+            this.metrics.cache_sent_size.get_or_create(&vec![("version".to_owned(), format!("{:?}", this.version))]).inc_by(this.size);
+            this.metrics.cache_sent_duration.get_or_create(&vec![("version".to_owned(), format!("{:?}", this.version))]).observe(this.start.elapsed().as_secs_f64());
         }
     }
 }
