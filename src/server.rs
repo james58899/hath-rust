@@ -20,11 +20,10 @@ use axum::{
     routing::get,
 };
 use futures::pin_mut;
-use h3::{error::Code, server::Connection};
+use h3::server::Connection;
 use h3_quinn::quinn;
 use http_body_util::BodyExt;
 use hyper::{
-    Version,
     header::{ALT_SVC, CONNECTION, DATE},
     server::conn::http1,
 };
@@ -308,7 +307,7 @@ async fn accept_loop_h3(handle: Arc<ServerHandle>, endpoint: Endpoint, router: R
             let conn = match new_conn.await {
                 Ok(conn) => conn,
                 Err(err) => {
-                    debug!("quic handshake error: {err}");
+                    debug!("{{quic/{addr}}} Handshake error: {err}");
                     return;
                 }
             };
@@ -317,7 +316,7 @@ async fn accept_loop_h3(handle: Arc<ServerHandle>, endpoint: Endpoint, router: R
             let mut h3_conn = match Connection::new(h3_quinn::Connection::new(conn)).await {
                 Ok(conn) => conn,
                 Err(err) => {
-                    debug!("h3 handshake error: {err}");
+                    debug!("{{h3/{addr}}} Handshake error: {err}");
                     return;
                 }
             };
@@ -325,6 +324,7 @@ async fn accept_loop_h3(handle: Arc<ServerHandle>, endpoint: Endpoint, router: R
             // Request loop
             let (close_wait, _) = watch::channel(());
             loop {
+                // Accept request
                 let resolver = tokio::select! {
                     biased;
                     resolver = h3_conn.accept() => resolver,
@@ -334,79 +334,72 @@ async fn accept_loop_h3(handle: Arc<ServerHandle>, endpoint: Endpoint, router: R
                         break;
                     },
                 };
-                match resolver {
-                    Ok(Some(resolver)) => {
-                        let router = router.clone();
-                        let request_done = close_wait.subscribe();
-                        tokio::spawn(async move {
-                            let (req, mut stream) = match resolver.resolve_request().await {
-                                Ok(res) => res,
-                                Err(err) => {
-                                    debug!("h3 read request error: {err}");
-                                    return;
-                                }
-                            };
-                            stream.stop_sending(Code::H3_NO_ERROR);
-                            while let Ok(Some(_)) = stream.recv_data().await {} // Drain data
-                            let mut request = Request::builder().version(req.version()).method(req.method()).uri(req.uri());
-                            *request.headers_mut().unwrap() = req.headers().clone();
-                            let request = request.body(http_body_util::Empty::new()).unwrap(); // We don't need body
+                let resolver = match resolver {
+                    Ok(Some(resolver)) => resolver,
+                    _ => break,
+                };
 
-                            // ref: https://github.com/hyperium/h3/issues/261#issuecomment-2352838801
-                            // Call Service
-                            let mut service = Extension(ClientAddr(addr)).layer(router.clone());
-                            let res = service.call(request).await.unwrap();
+                // Process request
+                let router = router.clone();
+                let request_done = close_wait.subscribe();
+                tokio::spawn(async move {
+                    // Read request
+                    let (req, mut stream) = match resolver.resolve_request().await {
+                        Ok(req) => req,
+                        Err(err) => {
+                            debug!("{{h3/{addr}}} Read request error: {err}");
+                            return;
+                        }
+                    };
+                    let mut request = Request::builder().version(req.version()).method(req.method()).uri(req.uri());
+                    *request.headers_mut().unwrap() = req.headers().clone();
+                    let request = request.body(http_body_util::Empty::new()).unwrap(); // We don't read body
 
-                            // Process response
-                            let mut streamed_res = Response::builder().status(res.status()).version(Version::HTTP_3);
-                            let header_mut = streamed_res.headers_mut().unwrap();
-                            *header_mut = res.headers().clone();
-                            header_mut.remove(CONNECTION); // H3 not allow connection header
-                            header_mut.entry(DATE).or_insert_with(date_header::update_and_header_value); // Add date header
+                    // ref: https://github.com/hyperium/h3/issues/261#issuecomment-2352838801
+                    // Call Service
+                    let mut service = Extension(ClientAddr(addr)).layer(router.clone());
+                    let (parts, body) = service.call(request).await.unwrap().into_parts();
 
-                            // Send response back
-                            if let Err(err) = stream.send_response(streamed_res.body(()).unwrap()).await {
-                                debug!("h3 send response error: {err}");
-                                return;
-                            }
-                            // send response body and trailers
-                            let mut buf = res.into_body().into_data_stream();
-                            while let Some(chunk) = buf.frame().await {
-                                match chunk {
-                                    Ok(frame) => {
-                                        // trailers
-                                        if frame.is_trailers() {
-                                            let trailers = frame.into_trailers().unwrap();
-                                            if let Err(err) = stream.send_trailers(trailers).await {
-                                                debug!("h3 send trailers error: {err}");
-                                                return;
-                                            }
-                                        } else if frame.is_data() {
-                                            let data = frame.into_data().unwrap();
-                                            if let Err(err) = stream.send_data(data).await {
-                                                debug!("h3 send data error: {err}");
-                                                return;
-                                            };
-                                        }
+                    // Build response
+                    let mut response = Response::from_parts(parts, ());
+                    let header = response.headers_mut();
+                    header.remove(CONNECTION); // H3 not allow connection header
+                    header.entry(DATE).or_insert_with(date_header::update_and_header_value); // Add date header
+
+                    // Send header
+                    if let Err(err) = stream.send_response(response).await {
+                        debug!("{{h3/{addr}}} Send response error: {err}");
+                        return;
+                    }
+                    // Send body and trailers
+                    let mut buf = body.into_data_stream();
+                    while let Some(chunk) = buf.frame().await {
+                        match chunk {
+                            Ok(frame) => {
+                                // trailers
+                                if frame.is_trailers() {
+                                    let trailers = frame.into_trailers().unwrap();
+                                    if let Err(err) = stream.send_trailers(trailers).await {
+                                        debug!("{{h3/{addr}}} Send trailers error: {err}");
+                                        return;
                                     }
-                                    Err(err) => {
-                                        error!("Failed to read stream {err}");
-                                    }
+                                } else if frame.is_data() {
+                                    let data = frame.into_data().unwrap();
+                                    if let Err(err) = stream.send_data(data).await {
+                                        debug!("{{h3/{addr}}} Send data error: {err}");
+                                        return;
+                                    };
                                 }
                             }
-                            let _ = stream.finish().await;
-                            drop(request_done); // Notify request complete
-                        });
+                            Err(err) => {
+                                error!("{{h3/{addr}}} Failed to read stream: {err}");
+                            }
+                        }
                     }
-                    // indicating that the remote sent a goaway frame
-                    // all requests have been processed
-                    Ok(None) => {
-                        break;
-                    }
-                    Err(_) => {
-                        break;
-                    }
-                }
+                    while let Ok(Some(_)) = stream.recv_data().await {} // All data must be read to receive ACK
+                    let _ = stream.finish().await;
+                    drop(request_done); // Notify request complete
+                });
             }
         });
     }
