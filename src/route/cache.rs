@@ -199,6 +199,8 @@ pub(super) async fn hath(
                     let hash = hasher.finish();
                     let duration = download_time.elapsed();
                     tx2.send_replace(progress);
+                    let _ = file.sync_all().await; // fsync
+                    drop(file); // Close file
                     tx2.closed().await; // Wait all request done
                     data.download_state.lock().remove(&info2.hash());
                     if hash.as_ref() == info2.hash() {
