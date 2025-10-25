@@ -91,6 +91,7 @@ impl Server {
 
         // h3
         let accept_task_h3 = if h3 {
+            info!("Enable experimental HTTP3 support. Please ensure UDP port {port} is open.");
             let quinn_config = create_quic_config(provider, cert_store);
             let endpoint = quinn::Endpoint::server(quinn_config, SocketAddr::from(([0, 0, 0, 0], port))).unwrap();
             Some(tokio::spawn(accept_loop_h3(handle.clone(), endpoint, router, flood_control)))
