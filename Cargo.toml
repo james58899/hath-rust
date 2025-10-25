@@ -82,3 +82,17 @@ rustls = { git = "https://github.com/james58899/rustls.git", tag = "0.23.33-patc
 lto = true
 opt-level = "s"
 strip = true
+
+# Override package opt level
+[profile.release.package.aws-lc-rs]
+opt-level = 3
+[profile.release.package.aws-lc-sys]
+opt-level = 3
+[profile.release.package.quinn]
+opt-level = 3
+[profile.release.package.quinn-proto]
+opt-level = 3
+[profile.release.package.rustls]
+opt-level = 3
+[profile.release.package.tikv-jemalloc-sys]
+opt-level = 3
