@@ -21,7 +21,7 @@ use hyper_util::{
     rt::{TokioIo, TokioTimer},
     service::TowerToHyperService,
 };
-use log::{debug, error, info};
+use log::{error, info};
 use parking_lot::Mutex;
 use quinn::{Endpoint, TransportConfig, crypto::rustls::QuicServerConfig};
 use rustls::{
@@ -302,19 +302,13 @@ async fn accept_loop_h3(handle: Arc<ServerHandle>, endpoint: Endpoint, router: R
             // QUIC handshake
             let conn = match new_conn.await {
                 Ok(conn) => conn,
-                Err(err) => {
-                    debug!("{{quic/{addr}}} Handshake error: {err}");
-                    return;
-                }
+                Err(_) => return, // Timeout or error
             };
 
             // H3 Handshake
             let mut h3_conn = match Connection::new(h3_quinn::Connection::new(conn)).await {
                 Ok(conn) => conn,
-                Err(err) => {
-                    debug!("{{h3/{addr}}} Handshake error: {err}");
-                    return;
-                }
+                Err(_) => return,
             };
 
             // Request loop
@@ -348,14 +342,11 @@ async fn accept_loop_h3(handle: Arc<ServerHandle>, endpoint: Endpoint, router: R
                     // Read request
                     let (req, mut stream) = match resolver.resolve_request().await {
                         Ok(req) => req,
-                        Err(err) => {
-                            debug!("{{h3/{addr}}} Read request error: {err}");
-                            return;
-                        }
+                        Err(_) => return,
                     };
 
                     if blocked {
-                        stream.stop_stream(Code::H3_REQUEST_REJECTED);
+                        stream.stop_stream(Code::H3_EXCESSIVE_LOAD);
                         return;
                     }
 
@@ -375,32 +366,27 @@ async fn accept_loop_h3(handle: Arc<ServerHandle>, endpoint: Endpoint, router: R
                     header.entry(DATE).or_insert_with(date_header::update_and_header_value); // Add date header
 
                     // Send header
-                    if let Err(err) = stream.send_response(response).await {
-                        debug!("{{h3/{addr}}} Send response error: {err}");
+                    if (stream.send_response(response).await).is_err() {
                         return;
                     }
                     // Send body and trailers
                     let mut buf = body.into_data_stream();
                     while let Some(chunk) = buf.frame().await {
                         match chunk {
+                            Ok(frame) if frame.is_data() => {
+                                if stream.send_data(frame.into_data().unwrap()).await.is_err() {
+                                    return;
+                                }
+                            }
                             Ok(frame) => {
-                                // trailers
-                                if frame.is_trailers() {
-                                    let trailers = frame.into_trailers().unwrap();
-                                    if let Err(err) = stream.send_trailers(trailers).await {
-                                        debug!("{{h3/{addr}}} Send trailers error: {err}");
-                                        return;
-                                    }
-                                } else if frame.is_data() {
-                                    let data = frame.into_data().unwrap();
-                                    if let Err(err) = stream.send_data(data).await {
-                                        debug!("{{h3/{addr}}} Send data error: {err}");
-                                        return;
-                                    };
+                                if stream.send_trailers(frame.into_trailers().unwrap()).await.is_err() {
+                                    return;
                                 }
                             }
                             Err(err) => {
                                 error!("{{h3/{addr}}} Failed to read stream: {err}");
+                                stream.stop_stream(Code::H3_INTERNAL_ERROR);
+                                return;
                             }
                         }
                     }
