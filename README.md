@@ -16,6 +16,8 @@ Features not included in the official.
 * Send filename to browser[^filename]
 * Monitoring endpoints ([wiki](https://github.com/james58899/hath-rust/wiki/Monitoring))
 * Strict SNI checking (Default off, may reduce quality)
+* Post-quantum cryptography[^pqc]
+* HTTP/3 (Experimental)
 
 ### Works
 Features that are included in the official and are working.
@@ -73,3 +75,4 @@ Not guaranteed to work, may break at any time.
 
 [^h2]: Multiplexing is useless for H@H, and a large number of connections will take up more system resources.
 [^filename]: If the filename is not sent, some browsers may download using the wrong name.
+[^pqc]: Support X25519MLKEM768 key agreement
