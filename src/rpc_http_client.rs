@@ -88,15 +88,13 @@ impl RPCHttpClient {
         tokio::spawn(task);
 
         match timeout(self.timeout, sender.send_request(build_request(&url)?)).await.ok() {
-            Some(res) => {
-                match res {
-                    Ok(r) => {
-                        self.preconnect(&server);
-                        self.check_status(r).await
-                    },
-                    Err(e) => Err(e.into()),
+            Some(res) => match res {
+                Ok(r) => {
+                    self.preconnect(&server);
+                    self.check_status(r).await
                 }
-            }
+                Err(e) => Err(e.into()),
+            },
             None => Err(IoError::new(TimedOut, format!("Request timeout: url={}", url)).into()),
         }
     }
