@@ -19,8 +19,9 @@ use reqwest::{IntoUrl, Url};
 use socket2::{SockRef, TcpKeepalive};
 use tokio::{
     net::{TcpSocket, TcpStream},
+    select,
     task::AbortHandle,
-    time::timeout,
+    time::{sleep, timeout},
 };
 
 use crate::CLIENT_VERSION;
@@ -54,11 +55,30 @@ impl RPCHttpClient {
 
         let conn = self.conn.lock().take_if(|(key, _)| key == &server);
         let conn = match conn {
-            Some((_, stream)) => {
-                // Connection timeout 5s
-                match timeout(Duration::from_secs(5), stream.inner().writable()).await {
-                    Ok(Ok(_)) => stream,
-                    _ => create_stream(&server).await?,
+            Some((_, mut stream)) => {
+                // Check if the connection is still alive
+                if let Ok(Some(err)) = stream.inner().take_error() {
+                    debug!("Connection error: {}", err);
+                    stream = create_stream(&server).await?;
+                };
+                select! {
+                    biased;
+                    Err(err) = stream.inner().readable() => {
+                        debug!("Connection readable error: {}", err);
+                        create_stream(&server).await?
+                    }
+                    writable = stream.inner().writable() => {
+                        if let Err(err) = writable {
+                            debug!("Connection writable error: {}", err);
+                            create_stream(&server).await?
+                        } else {
+                            stream
+                        }
+                    }
+                    _ = sleep(Duration::from_secs(1)) => {
+                        debug!("Connection timeout");
+                        create_stream(&server).await?
+                    }
                 }
             }
             None => create_stream(&server).await?,
