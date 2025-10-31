@@ -131,7 +131,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        target: ["x86_64-pc-windows-msvc", "i686-pc-windows-msvc"]
+        target: ["x86_64-pc-windows-msvc", "i686-pc-windows-msvc", "aarch64-pc-windows-msvc"]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/cache@v4
@@ -153,6 +153,7 @@ jobs:
         env:
           CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER: "rust-lld"
           CARGO_TARGET_I686_PC_WINDOWS_MSVC_LINKER: "rust-lld"
+          CARGO_TARGET_AARCH64_PC_WINDOWS_MSVC_LINKER: "rust-lld"
         run: cargo build --verbose --release --target ${{ matrix.target }}
       - uses: actions/upload-artifact@v4
         with:

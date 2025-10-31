@@ -27,6 +27,7 @@ jobs:
           mv artifacts/hath-rust-armv7-unknown-linux-musleabihf/hath-rust hath-rust-armv7-unknown-linux-musleabihf
           mv artifacts/hath-rust-x86_64-pc-windows-msvc/hath-rust.exe hath-rust-x86_64-pc-windows-msvc.exe
           mv artifacts/hath-rust-i686-pc-windows-msvc/hath-rust.exe hath-rust-i686-pc-windows-msvc.exe
+          mv artifacts/hath-rust-aarch64-pc-windows-msvc/hath-rust.exe hath-rust-aarch64-pc-windows-msvc.exe
           mv artifacts/hath-rust-universal-apple-darwin/hath-rust hath-rust-universal-apple-darwin
           mv artifacts/hath-rust-aarch64-linux-android/hath-rust hath-rust-aarch64-linux-android
           mv artifacts/hath-rust-armv7-linux-androideabi/hath-rust hath-rust-armv7-linux-androideabi
@@ -46,6 +47,7 @@ jobs:
             hath-rust-armv7-unknown-linux-musleabihf
             hath-rust-x86_64-pc-windows-msvc.exe
             hath-rust-i686-pc-windows-msvc.exe
+            hath-rust-aarch64-pc-windows-msvc.exe
             hath-rust-universal-apple-darwin
             hath-rust-aarch64-linux-android
             hath-rust-armv7-linux-androideabi
