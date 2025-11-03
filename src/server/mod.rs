@@ -23,12 +23,12 @@ use hyper_util::{
 };
 use log::{error, info};
 use parking_lot::Mutex;
-use quinn::{Endpoint, TransportConfig, crypto::rustls::QuicServerConfig};
+use quinn::{Connecting, Endpoint, TransportConfig, crypto::rustls::QuicServerConfig};
 use rustls::{
     ServerConfig,
     compress::CompressionCache,
     crypto::{CryptoProvider, aws_lc_rs::Ticketer},
-    server::NoServerSessionStorage,
+    server::{NoServerSessionStorage, ServerSessionMemoryCache},
     version::TLS13,
 };
 use tokio::{
@@ -149,9 +149,8 @@ fn create_quic_config(provider: Arc<CryptoProvider>, cert_store: Arc<CertStore>)
     // Prefer ChaCha20 on non-AES hardware.
     ssl_config.ignore_client_order = true;
     ssl_config.prioritize_chacha = aes_support();
-    // Only support ticket resumption.
-    ssl_config.session_storage = Arc::new(NoServerSessionStorage {});
-    ssl_config.ticketer = Ticketer::new().unwrap();
+    // Rustls QUIC 0-RTT require stateful resumption
+    ssl_config.session_storage = ServerSessionMemoryCache::new(65536); // TODO check size and performance
     ssl_config.send_tls13_tickets = 1;
     ssl_config.cert_compression_cache = CompressionCache::new(2).into(); // 1 cert * 2 compression algorithms
     // h3 settings
@@ -300,9 +299,9 @@ async fn accept_loop_h3(handle: Arc<ServerHandle>, endpoint: Endpoint, router: R
         let flood_control = flood_control.clone();
         tokio::spawn(async move {
             // QUIC handshake
-            let conn = match new_conn.await {
-                Ok(conn) => conn,
-                Err(_) => return, // Timeout or error
+            let conn = match new_conn.accept().map(Connecting::into_0rtt) {
+                Ok(Ok((conn, _))) => conn,
+                _ => return, // Timeout or error
             };
 
             // H3 Handshake
