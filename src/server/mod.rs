@@ -23,7 +23,7 @@ use hyper_util::{
 };
 use log::{error, info};
 use parking_lot::Mutex;
-use quinn::{Connecting, Endpoint, TransportConfig, crypto::rustls::QuicServerConfig};
+use quinn::{Endpoint, TransportConfig, crypto::rustls::QuicServerConfig};
 use rustls::{
     ServerConfig,
     compress::CompressionCache,
@@ -156,6 +156,7 @@ fn create_quic_config(provider: Arc<CryptoProvider>, cert_store: Arc<CertStore>)
     // h3 settings
     ssl_config.alpn_protocols = vec![b"h3".into()];
     ssl_config.max_early_data_size = u32::MAX; // 0-RTT support
+    ssl_config.send_half_rtt_data = true;
 
     let mut transport_config = TransportConfig::default();
     transport_config.congestion_controller_factory(Arc::new(quinn::congestion::BbrConfig::default())); // TODO replace with BBRv3
@@ -299,8 +300,14 @@ async fn accept_loop_h3(handle: Arc<ServerHandle>, endpoint: Endpoint, router: R
         let flood_control = flood_control.clone();
         tokio::spawn(async move {
             // QUIC handshake
-            let conn = match new_conn.accept().map(Connecting::into_0rtt) {
-                Ok(Ok((conn, _))) => conn,
+            let conn = match new_conn.accept() {
+                Ok(mut conn) => {
+                    // We need wait handshake data before start h3 handshake
+                    if conn.handshake_data().await.is_err() {
+                        return;
+                    }
+                    conn.into_0rtt().unwrap().0 // Server side 0-RTT always success
+                }
                 _ => return, // Timeout or error
             };
 
