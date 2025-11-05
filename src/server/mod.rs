@@ -214,7 +214,7 @@ async fn accept_loop(
     let mut flood_control = if flood_control { Some(FloodControl::new()) } else { None };
     // Add h3 Alt-svc header
     if let Some(port) = h3_port {
-        let value = HeaderValue::from_str(&format!("h3=\":{}\"", port)).unwrap();
+        let value = HeaderValue::from_str(&format!("h3=\":{}\"; persist=1", port)).unwrap();
         let h3_header = SetResponseHeaderLayer::appending(ALT_SVC, value);
         router = router.layer(h3_header)
     }
