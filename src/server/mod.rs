@@ -23,7 +23,7 @@ use hyper_util::{
 };
 use log::{error, info};
 use parking_lot::Mutex;
-use quinn::{Endpoint, TransportConfig, crypto::rustls::QuicServerConfig};
+use quinn::{BloomTokenLog, Endpoint, TransportConfig, ValidationTokenConfig, crypto::rustls::QuicServerConfig};
 use rustls::{
     ServerConfig,
     compress::CompressionCache,
@@ -150,7 +150,7 @@ fn create_quic_config(provider: Arc<CryptoProvider>, cert_store: Arc<CertStore>)
     ssl_config.ignore_client_order = true;
     ssl_config.prioritize_chacha = aes_support();
     // Rustls QUIC 0-RTT require stateful resumption
-    ssl_config.session_storage = ServerSessionMemoryCache::new(65536); // TODO check size and performance
+    ssl_config.session_storage = ServerSessionMemoryCache::new(65536); // ~64 bytes per session, ~4MiB total
     ssl_config.send_tls13_tickets = 1;
     ssl_config.cert_compression_cache = CompressionCache::new(2).into(); // 1 cert * 2 compression algorithms
     // h3 settings
@@ -163,9 +163,14 @@ fn create_quic_config(provider: Arc<CryptoProvider>, cert_store: Arc<CertStore>)
     transport_config.send_fairness(false); // We don't need send fairness
     transport_config.send_window(2500000); // 100Mbps * 200ms (2.5MB per connection) // TODO check size
     transport_config.max_idle_timeout(Some(Duration::from_secs(10).try_into().unwrap()));
+    let mut validation_config = ValidationTokenConfig::default();
+    validation_config.lifetime(Duration::from_hours(24)); // Match default alt-svc age
+    validation_config.log(Arc::new(BloomTokenLog::new_expected_items(2 * 1024 * 1024, 65536))); // 2MiB & match rustls session storage
+    validation_config.sent(1);
 
     let mut server_config = quinn::ServerConfig::with_crypto(Arc::new(QuicServerConfig::try_from(ssl_config).unwrap()));
     server_config.transport_config(transport_config.into());
+    server_config.max_incoming(500);
     server_config
 }
 
