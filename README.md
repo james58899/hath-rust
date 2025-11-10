@@ -58,6 +58,7 @@ Due to the lack of hardware or real environment, it was not tested before releas
 | armv7-unknown-linux-musleabihf |
 | x86_64-pc-windows-msvc         |
 | i686-pc-windows-msvc           |
+| aarch64-pc-windows-msvc        |
 | x86_64-apple-darwin            |
 | aarch64-apple-darwin           |
 
