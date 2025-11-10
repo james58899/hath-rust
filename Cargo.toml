@@ -73,7 +73,7 @@ tao = "0.34.0"
 vergen-gix = "1.0.9"
 
 [target.'cfg(windows)'.build-dependencies]
-tauri-winres = "0.3.1"
+tauri-winres = "0.3.5"
 
 [patch.crates-io]
 rustls = { git = "https://github.com/james58899/rustls.git", tag = "0.23.35-patch" }
