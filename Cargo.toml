@@ -9,7 +9,7 @@ build = "build.rs"
 [dependencies]
 arc-swap = "1.7"
 async-stream = "0.3"
-aws-lc-rs = { version = "1.13.0", default-features = false }
+aws-lc-rs = { version = "1.15.0", default-features = false }
 axum = { version = "0.8", default-features = false, features = ["http1", "matched-path"] }
 bytes = "1.10.1"
 chrono = { version = "0.4", default-features = false, features = [ "now" ] }
