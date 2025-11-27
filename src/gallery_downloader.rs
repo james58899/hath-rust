@@ -315,11 +315,12 @@ async fn download<P: AsRef<Path>>(
     let start = Instant::now();
     let mut file = fs::File::create(&path).await?;
     let mut stream = reqwest
-        .get(url)
+        .get(url.clone())
         .send()
         .await
         .and_then(|r| r.error_for_status())
-        .map(|r| r.bytes_stream())?;
+        .map(|r| r.bytes_stream())
+        .map_err(|err| if err.url().is_none() { err.with_url(url) } else { err })?;
     let mut hasher = digest::Context::new(&digest::SHA1_FOR_LEGACY_USE_ONLY);
     while let Some(bytes) = stream.next().await {
         let bytes = &bytes?;

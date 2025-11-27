@@ -19,6 +19,7 @@ use axum::{
 use bytes::BytesMut;
 use futures::StreamExt;
 use log::error;
+use reqwest::IntoUrl;
 use tokio::{
     fs::{File, OpenOptions},
     io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt},
@@ -150,8 +151,9 @@ pub(super) async fn hath(
                 let request = reqwest.get(source).send().await;
                 let mut stream = match request.and_then(|r| r.error_for_status()) {
                     Ok(r) => r.bytes_stream(),
-                    Err(ref err) => {
-                        error!("Cache download request fail: {:?}", err);
+                    Err(mut err) => {
+                        err = err_with_url(err, source);
+                        error!("Cache download request fail: {err:?}");
 
                         // Disable proxy on connect error and third retry
                         if use_proxy && (err.is_connect() || retry == 1) {
@@ -166,10 +168,11 @@ pub(super) async fn hath(
                 // Start download
                 let mut download = 0;
                 while let Some(bytes) = stream.next().await {
-                    let bytes = match &bytes {
+                    let bytes = match bytes {
                         Ok(it) => it,
-                        Err(err) => {
-                            error!("Cache download fail: {:?}", err);
+                        Err(mut err) => {
+                            err = err_with_url(err, source);
+                            error!("Cache download fail: {err:?}");
                             continue 'retry;
                         }
                     };
@@ -266,4 +269,17 @@ pub(super) async fn hath(
             }
         }))
         .unwrap()
+}
+
+/// Helper function to add url to reqwest error
+///
+/// Some kind of reqwest error doesn't have url, so add it manually
+fn err_with_url<T: IntoUrl>(error: reqwest::Error, url: T) -> reqwest::Error {
+    if error.url().is_none()
+        && let Ok(url) = url.into_url()
+    {
+        error.with_url(url)
+    } else {
+        error
+    }
 }
