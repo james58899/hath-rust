@@ -31,7 +31,7 @@ pub fn create_http_client(timeout: Duration, proxy: Option<Proxy>) -> reqwest::C
 
     let mut builder = reqwest::ClientBuilder::new()
         .user_agent(concatcp!("Hentai@Home ", CLIENT_VERSION))
-        .use_preconfigured_tls(tls)
+        .tls_backend_preconfigured(tls)
         .tcp_keepalive(Duration::from_secs(30))
         .tcp_keepalive_interval(Duration::from_secs(15))
         .tcp_keepalive_retries(6)
