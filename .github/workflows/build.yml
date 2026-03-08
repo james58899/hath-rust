@@ -40,7 +40,7 @@ jobs:
       matrix:
         target: ["x86_64-unknown-linux-gnu", "aarch64-unknown-linux-gnu", "armv7-unknown-linux-gnueabihf"]
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v6
     - name: Install amd64 build tools
       if: ${{ matrix.target == 'x86_64-unknown-linux-gnu' }}
       run: |
@@ -52,7 +52,7 @@ jobs:
     - name: Set Jemalloc page size to 64K for aarch64
       if: ${{ matrix.target == 'aarch64-unknown-linux-gnu' }}
       run: echo "JEMALLOC_SYS_WITH_LG_PAGE=16" >> $GITHUB_ENV
-    - uses: actions/cache@v4
+    - uses: actions/cache@v5
       with:
         path: |
           ~/.cargo/bin/
@@ -71,7 +71,7 @@ jobs:
         CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: "aarch64-linux-gnu-gcc"
         CARGO_TARGET_ARMV7_UNKNOWN_LINUX_GNUEABIHF_LINKER: "arm-linux-gnueabihf-gcc"
       run: cargo build --verbose --release --target=${{ matrix.target }}
-    - uses: actions/upload-artifact@v4
+    - uses: actions/upload-artifact@v7
       with:
         name: hath-rust-${{ matrix.target }}
         path: target/${{ matrix.target }}/release/hath-rust
@@ -83,7 +83,7 @@ jobs:
       matrix:
         target: ["x86_64-unknown-linux-musl", "aarch64-unknown-linux-musl", "armv7-unknown-linux-musleabihf"]
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v6
     - name: Install LLVM
       run: |
         wget https://apt.llvm.org/llvm.sh
@@ -95,7 +95,7 @@ jobs:
     - name: Install arm headers
       if: ${{ matrix.target == 'armv7-unknown-linux-musleabihf' }}
       run: sudo apt-get install -y libgcc-11-dev-armhf-cross
-    - uses: actions/cache@v4
+    - uses: actions/cache@v5
       with:
         path: |
           ~/.cargo/bin/
@@ -121,7 +121,7 @@ jobs:
         CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_RUSTFLAGS: "-Clinker=clang-19 -Clink-arg=-fuse-ld=lld-19 -Clink-arg=--target=aarch64-unknown-linux-musl"
         CARGO_TARGET_ARMV7_UNKNOWN_LINUX_MUSLEABIHF_RUSTFLAGS: "-Clinker=clang-19 -Clink-arg=-fuse-ld=lld-19 -Clink-arg=--target=armv7-unknown-linux-musleabihf"
       run: cargo build --verbose --release --target=${{ matrix.target }}
-    - uses: actions/upload-artifact@v4
+    - uses: actions/upload-artifact@v7
       with:
         name: hath-rust-${{ matrix.target }}
         path: target/${{ matrix.target }}/release/hath-rust
@@ -133,8 +133,8 @@ jobs:
       matrix:
         target: ["x86_64-pc-windows-msvc", "i686-pc-windows-msvc", "aarch64-pc-windows-msvc"]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/cache@v4
+      - uses: actions/checkout@v6
+      - uses: actions/cache@v5
         with:
           path: |
             ~/.cargo/bin/
@@ -155,7 +155,7 @@ jobs:
           CARGO_TARGET_I686_PC_WINDOWS_MSVC_LINKER: "rust-lld"
           CARGO_TARGET_AARCH64_PC_WINDOWS_MSVC_LINKER: "rust-lld"
         run: cargo build --verbose --release --target ${{ matrix.target }}
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: hath-rust-${{ matrix.target }}
           path: target/${{ matrix.target }}/release/hath-rust.exe
@@ -163,8 +163,8 @@ jobs:
     runs-on: macos-14
     if: inputs.skip-macos != true
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/cache@v4
+      - uses: actions/checkout@v6
+      - uses: actions/cache@v5
         with:
           path: |
             ~/.cargo/bin/
@@ -183,7 +183,7 @@ jobs:
         run: cargo build --verbose --release --target aarch64-apple-darwin
       - name: Universal binary
         run: lipo -create target/x86_64-apple-darwin/release/hath-rust target/aarch64-apple-darwin/release/hath-rust -output target/release/hath-rust
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: hath-rust-universal-apple-darwin
           path: target/release/hath-rust
@@ -199,8 +199,8 @@ jobs:
           - i686-linux-android
           - x86_64-linux-android
     steps:
-    - uses: actions/checkout@v4
-    - uses: actions/cache@v4
+    - uses: actions/checkout@v6
+    - uses: actions/cache@v5
       with:
         path: |
           ~/.cargo/bin/
@@ -226,7 +226,7 @@ jobs:
         export PATH=$PATH:${ANDROID_NDK_ROOT}/toolchains/llvm/prebuilt/linux-x86_64/bin
         cargo install --force --locked bindgen-cli
         cargo build --verbose --release --target=${{ matrix.target }}
-    - uses: actions/upload-artifact@v4
+    - uses: actions/upload-artifact@v7
       with:
         name: hath-rust-${{ matrix.target }}
         path: target/${{ matrix.target }}/release/hath-rust
