@@ -1,7 +1,7 @@
 #![windows_subsystem = "windows"]
-#[cfg(not(any(target_env = "msvc")))]
-use std::ffi::c_char;
-use std::{collections::HashMap, error::Error, ffi::CStr, ops::RangeInclusive, path::Path, sync::Arc, time::Duration};
+#[cfg(not(target_env = "msvc"))]
+use std::ffi::{CStr, c_char};
+use std::{collections::HashMap, error::Error, ops::RangeInclusive, path::Path, sync::Arc, time::Duration};
 
 use clap::Parser;
 use futures::TryFutureExt;
@@ -47,14 +47,15 @@ mod rpc;
 mod server;
 mod util;
 
-#[cfg(not(any(target_env = "msvc")))]
+#[cfg(not(target_env = "msvc"))]
 #[global_allocator]
 static ALLOC: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 
 // jemalloc config
+#[cfg(not(target_env = "msvc"))]
 const JEMALLOC_CONF: &CStr = c"percpu_arena:phycpu,tcache:false,thp:never,dirty_decay_ms:1000,muzzy_decay_ms:0";
 #[allow(non_upper_case_globals)]
-#[cfg(not(any(target_env = "msvc")))]
+#[cfg(not(any(target_env = "msvc", target_os = "android", target_os = "macos")))]
 #[unsafe(no_mangle)]
 pub static mut malloc_conf: *const c_char = JEMALLOC_CONF.as_ptr();
 #[allow(non_upper_case_globals)]
