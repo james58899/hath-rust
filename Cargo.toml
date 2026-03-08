@@ -7,54 +7,53 @@ license = "GPL-3.0-or-later"
 build = "build.rs"
 
 [dependencies]
-arc-swap = "1.8.0"
+arc-swap = "1.8.2"
 async-stream = "0.3.6"
-aws-lc-rs = { version = "1.15.2", default-features = false }
+aws-lc-rs = { version = "1.16.1", default-features = false }
 axum = { version = "0.8", default-features = false, features = ["http1", "matched-path"] }
-bytes = "1.11.0"
-chrono = { version = "0.4.42", default-features = false, features = [ "now" ] }
-clap = { version = "4.5.54", features = ["derive", "wrap_help"] }
-const-hex = "1.17.0"
+bytes = "1.11.1"
+chrono = { version = "0.4.44", default-features = false, features = [ "now" ] }
+clap = { version = "4.5.60", features = ["derive", "wrap_help"] }
+const-hex = "1.18.1"
 const_format = "0.2.35"
 fastrand = "2.3.0"
 filesize = "0.2.0"
-filetime = "0.2.26"
-futures = "0.3.31"
+filetime = "0.2.27"
+futures = "0.3.32"
 h3 = "0.0.8"
 http-body = "1.0.1"
 http-body-util = "0.1.3"
 httpdate = "1.0.3"
 hyper = { version = "1.8.1", features = ["http1", "server"] }
-hyper-util = { version = "0.1.19", features = ["tokio", "service"] }
+hyper-util = { version = "0.1.20", features = ["tokio", "service"] }
 idna_adapter = "~1.0.0" # Pin 1.0 to disable url idna support
-inquire = { version = "0.9.1", default-features = false, features = ["crossterm"] }
+inquire = { version = "0.9.4", default-features = false, features = ["crossterm"] }
 log = { version = "0.4.29", features = ["std"] }
 mime = "0.3.17"
 p12 = "0.6.3"
 parking_lot = { version = "0.12.5", features = ["hardware-lock-elision"] }
-pin-project-lite = "0.2.16"
+pin-project-lite = "0.2.17"
 prometheus-client = "0.24.0"
 quinn = { version = "0.11.9", default-features = false, features = ["bloom", "runtime-tokio", "rustls-aws-lc-rs"] }
-regex-lite = "0.1.8"
-reqwest = { version = "0.13.1", default-features = false, features = ["rustls-no-provider", "stream", "socks"] }
+regex-lite = "0.1.9"
+reqwest = { version = "0.13.2", default-features = false, features = ["rustls-no-provider", "stream", "socks"] }
 rmp-serde = "1.3.1"
 rustls = { version = "=0.23.35", default-features = false, features = ["brotli", "aws_lc_rs", "std", "tls12", "zlib"] } # Patch rustls to support Prioritize ChaCha20
 scopeguard = "1.2.0"
 serde = { version = "1.0.228", features = ["serde_derive"] }
-socket2 = "0.6.1"
-tempfile = "3.24.0"
-tokio = { version = "1.49.0", features = ["full"] }
+tempfile = "3.26.0"
+tokio = { version = "1.50.0", features = ["full"] }
 tokio-rustls = { version = "0.26.4", default-features = false, features = ["tls12"] }
 tokio-stream = { version = "0.1.18", default-features = false, features = ["fs"] }
 tokio-util = { version = "0.7.18", features = ["io"] }
-tower = { version = "0.5.2", features = ["timeout"] }
+tower = { version = "0.5.3", features = ["timeout"] }
 tower-http = { version = "0.6.8", features = ["set-header"] }
 unicode-segmentation = "1.12.0"
-webpki-roots = "1.0.5"
+webpki-roots = "1.0.6"
 
 # cpufeatures not support all platforms
 [target.'cfg(any(target_arch = "x86", target_arch = "x86_64", target_arch = "aarch64"))'.dependencies]
-cpufeatures = "0.2.17"
+cpufeatures = "0.3.0"
 
 [target.'cfg(not(any(target_env = "msvc", target_vendor = "apple")))'.dependencies]
 tikv-jemallocator = { version = "0.6.1", features = ["background_threads", "override_allocator_on_supported_platforms"] }
@@ -63,15 +62,15 @@ tikv-jemallocator = { version = "0.6.1", features = ["background_threads", "over
 tikv-jemallocator = { version = "0.6.1", features = ["override_allocator_on_supported_platforms"] } # jemalloc not support background threads on macos
 
 [target.'cfg(unix)'.dependencies]
-rustix = { version = "1.1.3", features = ["fs"] }
+rustix = { version = "1.1.4", features = ["fs"] }
 
 [target.'cfg(windows)'.dependencies]
 tray-icon = { version = "0.21.3", default-features = false }
 windows = { version = "0.61.1", features = ["Win32_Foundation", "Win32_System_Console", "Win32_UI_WindowsAndMessaging", "Win32_Storage_FileSystem"] }
-tao = "0.34.5"
+tao = "0.34.6"
 
 [build-dependencies]
-vergen-gix = "1.0.9"
+vergen-gix = "9.1.0"
 
 [target.'cfg(windows)'.build-dependencies]
 tauri-winres = "0.3.5"

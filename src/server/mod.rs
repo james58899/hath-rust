@@ -233,7 +233,7 @@ async fn accept_loop(
         // Flood control
         if flood_control.as_mut().is_some_and(|fc| fc.hit(addr)) {
             // Flood detected
-            let _ = socket2::SockRef::from(&stream).set_linger(Some(Duration::ZERO)); // RST connection
+            let _ = stream.set_zero_linger(); // RST connection
             drop(stream);
             continue;
         }
