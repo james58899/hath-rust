@@ -27,6 +27,7 @@ use tokio::{
 
 use crate::{
     cache_manager::{CacheConfig, CacheFileInfo, CacheManager},
+    error::Error::ApiResponseFail,
     gallery_downloader::GalleryDownloader,
     logger::Logger,
     metrics::Metrics,
@@ -206,7 +207,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
         Ok(settings) => settings,
         Err(err) => {
             error!("Login error: {}", err);
-            sleep(Duration::from_secs(5)).await;
+            if let ApiResponseFail { fail_code, .. } = &err
+                && fail_code.starts_with("FAIL_STARTUP_LOOP")
+            {
+                warn!("Restart loop detected, wait 15 minutes.");
+                sleep(Duration::from_mins(15)).await
+            } else {
+                sleep(Duration::from_secs(5)).await;
+            }
             return Err(err.into());
         }
     };
