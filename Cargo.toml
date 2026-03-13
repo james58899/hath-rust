@@ -13,7 +13,7 @@ aws-lc-rs = { version = "1.16.1", default-features = false }
 axum = { version = "0.8", default-features = false, features = ["http1", "matched-path"] }
 bytes = "1.11.1"
 chrono = { version = "0.4.44", default-features = false, features = [ "now" ] }
-clap = { version = "4.5.60", features = ["derive", "wrap_help"] }
+clap = { version = "4.6.0", features = ["derive", "wrap_help"] }
 const-hex = "1.18.1"
 const_format = "0.2.35"
 fastrand = "2.3.0"
