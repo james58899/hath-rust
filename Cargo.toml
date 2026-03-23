@@ -67,7 +67,7 @@ rustix = { version = "1.1.4", features = ["fs"] }
 [target.'cfg(windows)'.dependencies]
 tray-icon = { version = "0.21.3", default-features = false }
 windows = { version = "0.61.3", features = ["Win32_Foundation", "Win32_System_Console", "Win32_UI_WindowsAndMessaging", "Win32_Storage_FileSystem"] }
-tao = "0.34.6"
+tao = "0.35.0"
 
 [build-dependencies]
 vergen-gix = "9.1.0"
