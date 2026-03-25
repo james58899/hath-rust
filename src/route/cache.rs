@@ -85,6 +85,7 @@ pub(super) async fn hath(
     {
         return Response::builder()
             .header(CACHE_CONTROL, CACHE_HEADER)
+            .header(CONTENT_LENGTH, file_size) // rfc9110 section 8.6
             .header(ETAG, etag)
             .status(StatusCode::NOT_MODIFIED)
             .body(Body::empty())
