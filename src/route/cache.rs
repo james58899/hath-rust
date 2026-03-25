@@ -12,7 +12,10 @@ use axum::{
     extract::{Path, State},
     http::{
         HeaderMap, HeaderValue, StatusCode,
-        header::{ACCEPT_RANGES, CACHE_CONTROL, CONTENT_DISPOSITION, CONTENT_LENGTH, CONTENT_RANGE, CONTENT_TYPE, RANGE},
+        header::{
+            ACCEPT_RANGES, CACHE_CONTROL, CONTENT_DISPOSITION, CONTENT_LENGTH, CONTENT_RANGE, CONTENT_TYPE, ETAG, IF_NONE_MATCH, IF_RANGE,
+            RANGE,
+        },
     },
     response::{IntoResponse, Response},
 };
@@ -68,6 +71,26 @@ pub(super) async fn hath(
     let content_type = HeaderValue::from_maybe_shared(info.mime_type().to_string()).unwrap();
     let content_disposition = HeaderValue::from_maybe_shared(format!("inline; filename=\"{file_name}\"")).unwrap_or(DEFAULT_CD);
 
+    // ETag
+    // Browser only send range request if have etag
+    let etag = {
+        let mut builder = String::with_capacity(10);
+        builder.push('"');
+        builder.push_str(&const_hex::encode(&info.hash()[..4]));
+        builder.push('"');
+        builder
+    };
+    if let Some(cache_etag) = headers.get(IF_NONE_MATCH).and_then(|v| v.to_str().ok())
+        && cache_etag == etag
+    {
+        return Response::builder()
+            .header(CACHE_CONTROL, CACHE_HEADER)
+            .header(ETAG, etag)
+            .status(StatusCode::NOT_MODIFIED)
+            .body(Body::empty())
+            .unwrap();
+    }
+
     // Range request
     let range = if let Some(r) = headers
         .get(RANGE)
@@ -76,7 +99,14 @@ pub(super) async fn hath(
         .and_then(|r| r.validate(file_size).ok())
         && r.len() == 1
     {
-        r.into_iter().next()
+        // Check If-Range
+        if let Some(range_etag) = headers.get(IF_RANGE).and_then(|v| v.to_str().ok())
+            && range_etag != etag
+        {
+            None // If-Range etag mismatch
+        } else {
+            r.into_iter().next()
+        }
     } else {
         None
     };
@@ -85,7 +115,8 @@ pub(super) async fn hath(
     let response = Response::builder()
         .header(CACHE_CONTROL, CACHE_HEADER)
         .header(CONTENT_DISPOSITION, content_disposition)
-        .header(CONTENT_TYPE, content_type);
+        .header(CONTENT_TYPE, content_type)
+        .header(ETAG, etag);
 
     // Check cache hit
     match data.cache_manager.get_file(&info, range.as_ref().map(|r| *r.start())).await {
