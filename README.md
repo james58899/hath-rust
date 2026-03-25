@@ -18,6 +18,7 @@ Features not included in the official.
 * Strict SNI checking (Default off, may reduce quality)
 * Post-quantum cryptography[^pqc]
 * HTTP/3 (Experimental)
+* Range request and ETag support[^range]
 
 ### Works
 Features that are included in the official and are working.
@@ -77,3 +78,4 @@ Not guaranteed to work, may break at any time.
 [^h2]: Multiplexing is useless for H@H, and a large number of connections will take up more system resources.
 [^filename]: If the filename is not sent, some browsers may download using the wrong name.
 [^pqc]: Support X25519MLKEM768 key agreement
+[^range]: Allows the browser to resume interrupted image downloads.
