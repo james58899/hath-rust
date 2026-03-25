@@ -1,6 +1,6 @@
 use std::{
     fs::File,
-    io::{Error, ErrorKind, Read, Result},
+    io::{Error, ErrorKind, Read, Result, Seek, SeekFrom},
     pin::Pin,
     task::{Context, Poll},
 };
@@ -60,6 +60,35 @@ impl FileReader {
                 let bytes = buf.split().freeze();
                 state.replace((file, buf));
                 Ok(bytes)
+            }
+            Err((err, file, buf)) => {
+                state.replace((file, buf));
+                Err(err)
+            }
+        }
+    }
+
+    pub async fn seek(&mut self, offset: u64) -> Result<()> {
+        // Take state
+        let ReaderState::State(ref mut state) = self.state else {
+            return Err(Error::new(ErrorKind::ResourceBusy, "Double read"));
+        };
+        let (mut file, buf) = state.take().ok_or_else(|| Error::new(ErrorKind::ResourceBusy, "Double read"))?;
+
+        let result = self
+            .io_pool
+            .spawn(async move {
+                match file.seek(SeekFrom::Start(offset)) {
+                    Ok(_) => Ok((file, buf)),
+                    Err(err) => Err((err, file, buf)),
+                }
+            })
+            .await?;
+
+        match result {
+            Ok((file, buf)) => {
+                state.replace((file, buf));
+                Ok(())
             }
             Err((err, file, buf)) => {
                 state.replace((file, buf));

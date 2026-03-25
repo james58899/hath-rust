@@ -11,13 +11,14 @@ use axum::{
     body::Body,
     extract::{Path, State},
     http::{
-        HeaderValue,
-        header::{CACHE_CONTROL, CONTENT_DISPOSITION, CONTENT_LENGTH, CONTENT_TYPE},
+        HeaderMap, HeaderValue, StatusCode,
+        header::{ACCEPT_RANGES, CACHE_CONTROL, CONTENT_DISPOSITION, CONTENT_LENGTH, CONTENT_RANGE, CONTENT_TYPE, RANGE},
     },
     response::{IntoResponse, Response},
 };
 use bytes::BytesMut;
 use futures::StreamExt;
+use http_range_header::parse_range_header;
 use log::error;
 use reqwest::IntoUrl;
 use tokio::{
@@ -29,7 +30,7 @@ use tokio::{
 
 use crate::{
     AppState,
-    cache_manager::CacheFileInfo,
+    cache_manager::{CacheFileInfo, CacheFileResult},
     metrics::{LABEL_CACHE_DOWNLOAD, LABEL_CACHE_FETCH_URL},
     route::{forbidden, not_found, parse_additional},
     util::{create_http_client, string_to_hash},
@@ -41,6 +42,7 @@ const DEFAULT_CD: HeaderValue = HeaderValue::from_static("inline");
 
 pub(super) async fn hath(
     Path((file_id, additional, file_name)): Path<(String, String, String)>,
+    headers: HeaderMap,
     data: State<Arc<AppState>>,
 ) -> impl IntoResponse {
     let additional = parse_additional(&additional);
@@ -66,15 +68,57 @@ pub(super) async fn hath(
     let content_type = HeaderValue::from_maybe_shared(info.mime_type().to_string()).unwrap();
     let content_disposition = HeaderValue::from_maybe_shared(format!("inline; filename=\"{file_name}\"")).unwrap_or(DEFAULT_CD);
 
+    // Range request
+    let range = if let Some(r) = headers
+        .get(RANGE)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|h| parse_range_header(h).ok())
+        .and_then(|r| r.validate(file_size).ok())
+        && r.len() == 1
+    {
+        r.into_iter().next()
+    } else {
+        None
+    };
+
+    // Build response
+    let response = Response::builder()
+        .header(CACHE_CONTROL, CACHE_HEADER)
+        .header(CONTENT_DISPOSITION, content_disposition)
+        .header(CONTENT_TYPE, content_type);
+
     // Check cache hit
-    if let Some(file) = data.cache_manager.get_file(&info).await {
-        return Response::builder()
-            .header(CACHE_CONTROL, CACHE_HEADER)
-            .header(CONTENT_LENGTH, file_size)
-            .header(CONTENT_TYPE, content_type)
-            .header(CONTENT_DISPOSITION, content_disposition)
-            .body(Body::from_stream(file))
+    match data.cache_manager.get_file(&info, range.as_ref().map(|r| *r.start())).await {
+        CacheFileResult::Full(stream) => {
+            return if let Some(r) = range {
+                let content_length = r.end() - r.start() + 1;
+                let content_range = format!("bytes {}-{}/{}", r.start(), r.end(), file_size);
+                response
+                    .header(CONTENT_LENGTH, content_length)
+                    .header(CONTENT_RANGE, content_range)
+                    .status(StatusCode::PARTIAL_CONTENT)
+            } else {
+                response.header(CONTENT_LENGTH, file_size)
+            }
+            .header(ACCEPT_RANGES, "bytes")
+            .body(Body::from_stream(stream))
             .unwrap();
+        }
+        CacheFileResult::Partial(stream) => {
+            let content_length = range.as_ref().map(|r| r.end() - r.start() + 1).unwrap_or(file_size);
+            let content_range = range
+                .map(|r| format!("bytes {}-{}/{}", r.start(), r.end(), file_size))
+                .unwrap_or_else(|| format!("bytes 0-{}/{}", file_size - 1, file_size));
+
+            return response
+                .header(ACCEPT_RANGES, "bytes")
+                .header(CONTENT_LENGTH, content_length)
+                .header(CONTENT_RANGE, content_range)
+                .status(StatusCode::PARTIAL_CONTENT)
+                .body(Body::from_stream(stream))
+                .unwrap();
+        }
+        CacheFileResult::NotFound => {}
     }
 
     // Cache miss, proxy request
@@ -233,11 +277,8 @@ pub(super) async fn hath(
         return not_found();
     }
 
-    Response::builder()
-        .header(CACHE_CONTROL, CACHE_HEADER)
+    response
         .header(CONTENT_LENGTH, file_size)
-        .header(CONTENT_TYPE, content_type)
-        .header(CONTENT_DISPOSITION, content_disposition)
         .body(Body::from_stream(stream! {
             let mut file = File::open(temp_path.as_ref()).await.unwrap();
             let mut read_off = 0;

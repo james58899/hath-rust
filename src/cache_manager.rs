@@ -58,6 +58,16 @@ pub struct CacheConfig {
     temp_dir: PathBuf,
 }
 
+/// Result of a cache file read operation
+pub enum CacheFileResult<S> {
+    /// Full file content from the beginning
+    Full(S),
+    /// Partial content from offset
+    Partial(S),
+    /// File not found or error
+    NotFound,
+}
+
 #[derive(Serialize, Deserialize)]
 struct CacheState {
     file_count: u64,
@@ -201,30 +211,47 @@ impl CacheManager {
         .unwrap()
     }
 
-    pub async fn get_file(self: &Arc<Self>, info: &CacheFileInfo) -> Option<impl Stream<Item = Result<Bytes, Error>> + use<>> {
+    pub async fn get_file(
+        self: &Arc<Self>,
+        info: &CacheFileInfo,
+        offset: Option<u64>,
+    ) -> CacheFileResult<impl Stream<Item = Result<Bytes, Error>> + use<>> {
         let path = info.to_path(&self.cache_dir);
 
         // Check exists and open file
         let io_pool = self.get_io_pool();
         let path2 = path.clone();
-        let metadata = io_pool.spawn(async move { std::fs::metadata(&path2) }).await.ok()?.ok()?;
+        let Ok(Ok(metadata)) = io_pool.spawn(async move { std::fs::metadata(&path2) }).await else {
+            return CacheFileResult::NotFound;
+        };
         if !metadata.is_file() || metadata.len() != info.size() as u64 {
-            warn!("Unexcepted cache file metadata: type={:?}, size={}", metadata.file_type(), metadata.len());
-            return None;
+            warn!("Unexcepted cache file metadata: path={:?} type={:?}, size={}", path, metadata.file_type(), metadata.len());
+            return CacheFileResult::NotFound;
         }
         let path2 = path.clone();
-        let mut file_reader = match io_pool.spawn(async move { std::fs::File::open(&path2) }).await.ok()? {
-            Ok(file) => FileReader::new(io_pool.clone(), file, 64 * 1024), // 64KiB buffer
+        let mut file_reader = match io_pool.spawn(async move { std::fs::File::open(&path2) }).await {
+            Ok(Ok(file)) => FileReader::new(io_pool.clone(), file, 64 * 1024), // 64KiB buffer
+            Ok(Err(err)) => {
+                error!("Open cache file error: path={:?}, err={}", &path, err);
+                return CacheFileResult::NotFound;
+            }
             Err(err) => {
                 error!("Open cache file error: path={:?}, err={}", &path, err);
-                return None;
+                return CacheFileResult::NotFound;
             }
         };
 
         // Skip hash check if file is recently accessed
         let one_week_ago = SystemTime::now() - Duration::from_secs(60 * 60 * 24 * 7);
         if FileTime::from_last_modification_time(&metadata) >= one_week_ago.into() {
-            return Some(file_reader.boxed());
+            // Handle offset for range request
+            if let Some(offset) = offset
+                && offset != 0
+                && file_reader.seek(offset).await.is_ok()
+            {
+                return CacheFileResult::Partial(file_reader.boxed());
+            }
+            return CacheFileResult::Full(file_reader.boxed());
         }
 
         self.mark_recently_accessed(info).await;
@@ -247,7 +274,21 @@ impl CacheManager {
                 };
                 read_off += buffer.len() as u64;
                 hasher.update(&buffer);
-                let _ = tx.send(Ok(buffer)).await;
+                if let Some(offset) = offset {
+                    // Skip buffer out of request range
+                    if offset < read_off {
+                        let mut buffer = buffer;
+                        // Cut buffer to offset
+                        if offset > read_off - buffer.len() as u64 {
+                            let cut = buffer.len() - (read_off - offset) as usize;
+                            buffer = buffer.split_off(cut)
+                        }
+
+                        let _ = tx.send(Ok(buffer)).await;
+                    }
+                } else {
+                    let _ = tx.send(Ok(buffer)).await;
+                }
             }
 
             let hash = hasher.finish();
@@ -257,14 +298,17 @@ impl CacheManager {
             }
         });
 
-        Some(
-            stream! {
-                while let Some(item) = rx.recv().await {
-                    yield item;
-                }
+        let stream = stream! {
+            while let Some(item) = rx.recv().await {
+                yield item;
             }
-            .boxed(),
-        )
+        }
+        .boxed();
+        if offset.is_some() {
+            CacheFileResult::Partial(stream)
+        } else {
+            CacheFileResult::Full(stream)
+        }
     }
 
     pub async fn import_cache(&self, info: &CacheFileInfo, file_path: &TempPath) {
