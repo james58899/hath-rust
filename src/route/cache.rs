@@ -77,13 +77,13 @@ pub(super) async fn hath(
     let etag = {
         let mut builder = String::with_capacity(10);
         builder.push('"');
-        builder.push_str(&const_hex::encode(&info.hash()[..4]));
+        builder.push_str(&const_hex::encode(&info.hash()[..4])); // First 8 hex
         builder.push('"');
         builder
     };
-    if let Some(cache_etag) = headers.get(IF_NONE_MATCH).and_then(|v| v.to_str().ok())
-        && cache_etag == etag
-    {
+    // Handle If-None-Match
+    if headers.get(IF_NONE_MATCH).is_some_and(|h| h.to_str().is_ok_and(|s| s == etag)) {
+        // 304 Not Modified
         return Response::builder()
             .header(CACHE_CONTROL, CACHE_HEADER)
             .header(CONTENT_LENGTH, file_size) // rfc9110 section 8.6
@@ -94,24 +94,17 @@ pub(super) async fn hath(
     }
 
     // Range request
-    let mut range = if let Some(r) = headers
+    let mut range = headers
         .get(RANGE)
         .and_then(|v| v.to_str().ok())
         .and_then(|h| parse_range_header(h).ok())
         .and_then(|r| r.validate(file_size).ok())
-        && r.len() == 1
-    {
-        // Check If-Range
-        if let Some(range_etag) = headers.get(IF_RANGE).and_then(|v| v.to_str().ok())
-            && range_etag != etag
-        {
-            None // If-Range etag mismatch
-        } else {
-            r.into_iter().next()
-        }
-    } else {
-        None
-    };
+        .filter(|r| r.len() == 1)
+        .and_then(|r| r.into_iter().next());
+    // Check If-Range
+    if headers.get(IF_RANGE).is_some_and(|h| h.to_str().is_ok_and(|s| s != etag)) {
+        range.take(); // etag not match, ignore range request
+    }
 
     // Build response
     let response = Response::builder()

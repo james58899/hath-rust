@@ -8,7 +8,7 @@ use std::{
     vec,
 };
 
-use axum::{Extension, Router, extract::Request, http::HeaderValue, response::Response, routing::get};
+use axum::{Extension, Router, body::Body, extract::Request, http::HeaderValue, response::Response, routing::get};
 use futures::pin_mut;
 use h3::{error::Code, server::Connection};
 use h3_quinn::quinn;
@@ -363,12 +363,12 @@ async fn accept_loop_h3(handle: Arc<ServerHandle>, endpoint: Endpoint, router: R
 
                     let mut request = Request::builder().version(req.version()).method(req.method()).uri(req.uri());
                     *request.headers_mut().unwrap() = req.headers().clone();
-                    let request = request.body(http_body_util::Empty::new()).unwrap(); // We don't read body
+                    let request = request.body(Body::empty()).unwrap(); // We don't read body
 
                     // ref: https://github.com/hyperium/h3/issues/261#issuecomment-2352838801
                     // Call Service
                     let mut service = Extension(ClientAddr(addr)).layer(router.clone());
-                    let (parts, body) = service.call(request).await.unwrap().into_parts();
+                    let (parts, mut body) = service.call(request).await.unwrap().into_parts();
 
                     // Build response
                     let mut response = Response::from_parts(parts, ());
@@ -381,8 +381,7 @@ async fn accept_loop_h3(handle: Arc<ServerHandle>, endpoint: Endpoint, router: R
                         return;
                     }
                     // Send body and trailers
-                    let mut buf = body.into_data_stream();
-                    while let Some(chunk) = buf.frame().await {
+                    while let Some(chunk) = body.frame().await {
                         match chunk {
                             Ok(frame) if frame.is_data() => {
                                 if stream.send_data(frame.into_data().unwrap()).await.is_err() {
