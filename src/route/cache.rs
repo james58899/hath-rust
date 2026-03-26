@@ -41,7 +41,7 @@ use crate::{
 };
 
 const TTL: RangeInclusive<i64> = -900..=900; // Token TTL 15 minutes
-const CACHE_HEADER: HeaderValue = HeaderValue::from_static("public, max-age=31536000");
+const CACHE_HEADER: HeaderValue = HeaderValue::from_static("public, max-age=31536000, immutable");
 const DEFAULT_CD: HeaderValue = HeaderValue::from_static("inline");
 
 pub(super) async fn hath(
