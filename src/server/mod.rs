@@ -51,7 +51,7 @@ use crate::{
 mod cert;
 mod date_header;
 mod h3_quinn;
-mod util;
+pub mod util;
 
 pub struct Server {
     handle: Arc<ServerHandle>,

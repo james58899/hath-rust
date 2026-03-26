@@ -36,6 +36,7 @@ use crate::{
     cache_manager::{CacheFileInfo, CacheFileResult},
     metrics::{LABEL_CACHE_DOWNLOAD, LABEL_CACHE_FETCH_URL},
     route::{forbidden, not_found, parse_additional},
+    server::util::TruncateBody,
     util::{create_http_client, string_to_hash},
 };
 
@@ -93,7 +94,7 @@ pub(super) async fn hath(
     }
 
     // Range request
-    let range = if let Some(r) = headers
+    let mut range = if let Some(r) = headers
         .get(RANGE)
         .and_then(|v| v.to_str().ok())
         .and_then(|h| parse_range_header(h).ok())
@@ -120,37 +121,36 @@ pub(super) async fn hath(
         .header(ETAG, etag);
 
     // Check cache hit
-    match data.cache_manager.get_file(&info, range.as_ref().map(|r| *r.start())).await {
+    let file_stream = match data.cache_manager.get_file(&info, range.as_ref().map(|r| *r.start())).await {
         CacheFileResult::Full(stream) => {
-            return if let Some(r) = range {
-                let content_length = r.end() - r.start() + 1;
-                let content_range = format!("bytes {}-{}/{}", r.start(), r.end(), file_size);
-                response
-                    .header(CONTENT_LENGTH, content_length)
-                    .header(CONTENT_RANGE, content_range)
-                    .status(StatusCode::PARTIAL_CONTENT)
-            } else {
-                response.header(CONTENT_LENGTH, file_size)
+            if range.as_ref().is_some_and(|r| *r.start() != 0) {
+                // File seek fail, reject range request
+                range.take();
             }
-            .header(ACCEPT_RANGES, "bytes")
-            .body(Body::from_stream(stream))
-            .unwrap();
+            Some(stream)
         }
-        CacheFileResult::Partial(stream) => {
-            let content_length = range.as_ref().map(|r| r.end() - r.start() + 1).unwrap_or(file_size);
-            let content_range = range
-                .map(|r| format!("bytes {}-{}/{}", r.start(), r.end(), file_size))
-                .unwrap_or_else(|| format!("bytes 0-{}/{}", file_size - 1, file_size));
+        CacheFileResult::Partial(stream) => Some(stream),
+        CacheFileResult::NotFound => None,
+    };
 
-            return response
+    if let Some(stream) = file_stream {
+        return if let Some(r) = range {
+            let content_length = r.end() - r.start() + 1;
+            let content_range = format!("bytes {}-{}/{}", r.start(), r.end(), file_size);
+            response
                 .header(ACCEPT_RANGES, "bytes")
                 .header(CONTENT_LENGTH, content_length)
                 .header(CONTENT_RANGE, content_range)
                 .status(StatusCode::PARTIAL_CONTENT)
+                .body(Body::new(TruncateBody::new(Body::from_stream(stream), content_length)))
+                .unwrap()
+        } else {
+            response
+                .header(ACCEPT_RANGES, "bytes")
+                .header(CONTENT_LENGTH, file_size)
                 .body(Body::from_stream(stream))
-                .unwrap();
-        }
-        CacheFileResult::NotFound => {}
+                .unwrap()
+        };
     }
 
     // Cache miss, proxy request

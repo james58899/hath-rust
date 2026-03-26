@@ -1,13 +1,19 @@
 use std::{
     cmp::min,
     collections::HashMap,
+    error::Error,
     net::{IpAddr, SocketAddr},
     ops::Deref,
+    pin::Pin,
+    task::{Context, Poll},
     time::{Duration, Instant},
 };
 
 use axum::{Extension, extract::FromRequestParts, http::request::Parts};
+use bytes::{Buf, Bytes};
+use http_body::SizeHint;
 use log::warn;
+use pin_project_lite::pin_project;
 
 #[derive(Clone)]
 pub struct ClientAddr(pub SocketAddr);
@@ -81,5 +87,71 @@ impl FloodControl {
         } else {
             false
         }
+    }
+}
+
+pin_project! {
+    pub struct TruncateBody<B> {
+        limit: u64,
+        #[pin]
+        inner: B,
+    }
+}
+
+impl<B> TruncateBody<B> {
+    pub fn new(inner: B, limit: u64) -> Self {
+        Self { limit, inner }
+    }
+}
+
+impl<B> http_body::Body for TruncateBody<B>
+where
+    B: http_body::Body<Data = Bytes>,
+    B::Error: Into<Box<dyn Error + Send + Sync>>,
+{
+    type Data = Bytes;
+    type Error = Box<dyn Error + Send + Sync>;
+
+    fn poll_frame(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Result<http_body::Frame<Self::Data>, Self::Error>>> {
+        let this = self.project();
+        let res = match this.inner.poll_frame(cx) {
+            Poll::Pending => return Poll::Pending,
+            Poll::Ready(None) => None,
+            Poll::Ready(Some(Ok(mut frame))) => {
+                if *this.limit == 0 {
+                    return Poll::Ready(None);
+                }
+                if let Some(data) = frame.data_mut() {
+                    let len = data.remaining() as u64;
+                    if len > *this.limit {
+                        data.truncate(*this.limit as usize);
+                        *this.limit = 0;
+                    } else {
+                        *this.limit -= len;
+                    }
+                }
+
+                Some(Ok(frame))
+            }
+            Poll::Ready(Some(Err(err))) => Some(Err(err.into())),
+        };
+
+        Poll::Ready(res)
+    }
+
+    fn is_end_stream(&self) -> bool {
+        self.inner.is_end_stream()
+    }
+
+    fn size_hint(&self) -> SizeHint {
+        let mut hint = self.inner.size_hint();
+        if hint.lower() >= self.limit {
+            hint.set_exact(self.limit)
+        } else if let Some(max) = hint.upper() {
+            hint.set_upper(self.limit.min(max))
+        } else {
+            hint.set_upper(self.limit)
+        }
+        hint
     }
 }
