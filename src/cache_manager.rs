@@ -225,7 +225,7 @@ impl CacheManager {
             return CacheFileResult::NotFound;
         };
         if !metadata.is_file() || metadata.len() != info.size() as u64 {
-            warn!("Unexcepted cache file metadata: path={:?} type={:?}, size={}", path, metadata.file_type(), metadata.len());
+            warn!("Unexpected cache file metadata: path={:?} type={:?}, size={}", path, metadata.file_type(), metadata.len());
             return CacheFileResult::NotFound;
         }
         let path2 = path.clone();
