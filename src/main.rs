@@ -65,7 +65,7 @@ pub static mut malloc_conf: *const c_char = JEMALLOC_CONF.as_ptr();
 pub static mut _rjem_malloc_conf: *const c_char = JEMALLOC_CONF.as_ptr();
 
 const VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), "-", env!("VERGEN_GIT_SHA"));
-pub const CLIENT_VERSION: &str = "1.6.4";
+pub const CLIENT_VERSION: &str = "1.6.5";
 const MAX_KEY_TIME_DRIFT: RangeInclusive<i64> = -300..=300;
 
 #[derive(Parser)]
