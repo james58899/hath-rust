@@ -87,7 +87,7 @@ impl RPCHttpClient {
         // spawn a task to poll the connection and drive the HTTP state
         tokio::spawn(task);
 
-        match timeout(self.timeout, sender.send_request(build_request(&url)?)).await.ok() {
+        match timeout(Duration::from_secs(5), sender.send_request(build_request(&url)?)).await.ok() {
             Some(res) => match res {
                 Ok(r) => {
                     self.preconnect(&server);
@@ -134,7 +134,7 @@ impl RPCHttpClient {
         if status.is_client_error() || status.is_server_error() {
             Err(crate::error::Error::ServerError {
                 status,
-                body: self.to_bytes(res).await.ok().and_then(|b| String::from_utf8(b.to_vec()).ok()),
+                body: self.to_text(res).await.ok(),
             }
             .into())
         } else {
