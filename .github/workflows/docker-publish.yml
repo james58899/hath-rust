@@ -125,7 +125,7 @@ jobs:
           FROM binary-\$TARGETARCH AS binary
           FROM busybox:stable-glibc
           WORKDIR /hath
-          COPY --from=library /libgcc_s.so.1 /lib/libgcc_s.so.1
+          COPY --from=binary /libgcc_s.so.1 /lib/libgcc_s.so.1
           COPY --from=binary --chmod=755 /hath-rust /usr/local/bin/hath-rust
           ENTRYPOINT ["hath-rust"]
           EOF
