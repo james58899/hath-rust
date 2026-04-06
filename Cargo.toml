@@ -7,7 +7,7 @@ license = "GPL-3.0-or-later"
 build = "build.rs"
 
 [dependencies]
-arc-swap = "1.8.2"
+arc-swap = "1.9.1"
 async-stream = "0.3.6"
 aws-lc-rs = { version = "1.16.1", default-features = false }
 axum = { version = "0.8", default-features = false, features = ["http1", "matched-path"] }
