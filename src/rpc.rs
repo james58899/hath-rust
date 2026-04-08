@@ -230,9 +230,9 @@ impl RPCClient {
                 return Some(());
             }
 
-            error!("Startup Failure: {}", &res.status.as_str());
-            match res.status.as_str() {
-                "FAIL_CONNECT_TEST" => error!(
+            error!("Startup Failure: {}", res.status);
+            match res.status {
+                s if s.starts_with("FAIL_CONNECT_TEST") => error!(
                     r#"
 
 ************************************************************************************************************************************
@@ -252,7 +252,7 @@ Use Program -> Exit in windowed mode or hit Ctrl+C in console mode to exit the p
                     settings.client_port(),
                     settings.client_host()
                 ),
-                "FAIL_OTHER_CLIENT_CONNECTED" => error!(
+                s if s.starts_with("FAIL_OTHER_CLIENT_CONNECTED") => error!(
                     r#"
 
 ************************************************************************************************************************************
@@ -263,7 +263,7 @@ The program will now terminate.
 
 "#
                 ),
-                "FAIL_CID_IN_USE" => error!(
+                s if s.starts_with("FAIL_CID_IN_USE") => error!(
                     r#"
 
 ************************************************************************************************************************************
@@ -374,14 +374,14 @@ The program will now terminate.
             }
 
             // Check error code
-            match res.status.as_str() {
-                "TERM_BAD_NETWORK" => {
+            match res.status {
+                s if s.starts_with("TERM_BAD_NETWORK") => {
                     error!(
                         "Client is shutting down since the network is misconfigured; correct firewall/forwarding settings then restart the client."
                     );
                     return false; // Shutdown by RPC
                 }
-                "FAIL_NOT_LOGGED_IN" => {
+                s if s.starts_with("FAIL_NOT_LOGGED_IN") => {
                     error!("The client session is invalid, shutting down.");
                     return false;
                 }
