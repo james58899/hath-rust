@@ -349,7 +349,7 @@ The program will now terminate.
             if res.is_ok() {
                 return Some(res.data);
             } else {
-                panic!("Failed to request gallery file url for fileindex={fileindex}");
+                error!("Failed to request gallery file url for fileindex={fileindex}");
             }
         }
 
