@@ -625,7 +625,7 @@ impl CacheManager {
                 if state.is_empty() {
                     return;
                 }
-                state.sort_unstable_by(|(_, a), (_, b)| a.oldest.cmp(&b.oldest));
+                state.sort_unstable_by_key(|(_, a)| a.oldest);
                 let (sr, state) = state[0];
                 static_range = sr.clone();
                 target_dir = self.cache_dir.join(&sr[0..2]).join(&sr[2..4]);
@@ -658,7 +658,7 @@ impl CacheManager {
                 })
                 .collect()
                 .await;
-            files.sort_unstable_by(|(_, a, _), (_, b, _)| a.cmp(b));
+            files.sort_unstable_by_key(|(_, a, _)| *a);
 
             // Delete cache until need_free is 0 or mtime is new than cut_off
             let mut new_oldest = files.last().map_or_else(FileTime::now, |(_, mtime, _)| *mtime);
