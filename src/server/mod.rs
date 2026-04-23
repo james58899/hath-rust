@@ -59,10 +59,64 @@ pub struct Server {
     accept_task_h3: Option<JoinHandle<()>>,
 }
 
+pub struct ServerOptions {
+    port: u16,
+    cert: ParsedCert,
+    data: AppState,
+    flood_control: bool,
+    enable_metrics: bool,
+    sni_strict: bool,
+    server_header: bool,
+    h3: bool,
+}
+
+impl ServerOptions {
+    pub fn new(port: u16, cert: ParsedCert, data: AppState) -> Self {
+        Self {
+            port,
+            cert,
+            data,
+            flood_control: true,
+            enable_metrics: false,
+            sni_strict: false,
+            server_header: true,
+            h3: false,
+        }
+    }
+
+    pub fn flood_control(mut self, enabled: bool) -> Self {
+        self.flood_control = enabled;
+        self
+    }
+
+    pub fn metrics(mut self, enabled: bool) -> Self {
+        self.enable_metrics = enabled;
+        self
+    }
+
+    pub fn sni_strict(mut self, enabled: bool) -> Self {
+        self.sni_strict = enabled;
+        self
+    }
+
+    pub fn server_header(mut self, enabled: bool) -> Self {
+        self.server_header = enabled;
+        self
+    }
+
+    pub fn h3(mut self, enabled: bool) -> Self {
+        self.h3 = enabled;
+        self
+    }
+}
+
 impl Server {
-    pub fn new(port: u16, cert: ParsedCert, data: AppState, flood_control: bool, enable_metrics: bool, sni_strict: bool, h3: bool) -> Self {
+    pub fn new(option: ServerOptions) -> Self {
+        let port = option.port;
+        let flood_control = option.flood_control;
+
         let provider = Arc::new(ssl_provider());
-        let cert_store = Arc::new(CertStore::new(provider.clone(), cert, sni_strict));
+        let cert_store = Arc::new(CertStore::new(provider.clone(), option.cert, option.sni_strict));
         let handle = Arc::new(ServerHandle::new(cert_store.clone()));
 
         let acceptor = TlsAcceptor::from(Arc::new(create_ssl_config(provider.clone(), cert_store.clone())));
@@ -78,19 +132,19 @@ impl Server {
 
         let mut router = Router::new();
         router = route::register_route(router);
-        if enable_metrics {
+        if option.enable_metrics {
             router = router.route("/metrics", get(route::metrics));
             info!("Metrics endpoint enabled at '/metrics'");
         }
-        router = middleware::register_layer(router, &data);
-        let router = router.with_state(Arc::new(data));
+        router = middleware::register_layer(router, &option.data, option.server_header);
+        let router = router.with_state(Arc::new(option.data));
 
         // Accept loop
-        let h3_port = if h3 { Some(port) } else { None };
+        let h3_port = if option.h3 { Some(port) } else { None };
         let accept_task = tokio::spawn(accept_loop(handle.clone(), listener, acceptor, http, router.clone(), flood_control, h3_port));
 
         // h3
-        let accept_task_h3 = if h3 {
+        let accept_task_h3 = if option.h3 {
             info!("Enable experimental HTTP3 support. Please ensure UDP port {port} is open.");
             let quinn_config = create_quic_config(provider, cert_store);
             let endpoint = quinn::Endpoint::server(quinn_config, SocketAddr::from(([0, 0, 0, 0], port))).unwrap();

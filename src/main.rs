@@ -33,7 +33,7 @@ use crate::{
     logger::Logger,
     metrics::Metrics,
     rpc::RPCClient,
-    server::Server,
+    server::{Server, ServerOptions},
     util::{create_dirs, create_http_client},
 };
 
@@ -137,9 +137,13 @@ struct Args {
     #[arg(long, default_value_t = false)]
     enable_metrics: bool,
 
-    /// Enable strict SNI checking. Reject connections with SNI mismatches to avoid being discovered by scanners. (May reduce quality)
-    #[arg(long, default_value_t = false)]
+    /// Deprecated: replace by --disable-server-header
+    #[arg(long, default_value_t = false, hide = true)]
     sni_strict: bool,
+
+    /// Disable sending "Server" header to avoid being discovered by scanners.
+    #[arg(long, default_value_t = false)]
+    disable_server_header: bool,
 
     /// Experimental HTTP3
     #[arg(long, default_value_t = false)]
@@ -199,6 +203,13 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let metrics = Arc::new(Metrics::new());
 
     info!("Hentai@Home {COMPAT_VERSION} (Rust {VERSION}) starting up");
+
+    // Deprecated option handle
+    if args.sni_strict {
+        error!("Option --sni-strict deprecated, use --disable_server_header instead.");
+        // args.disable_server_header = true;
+        // TODO remove sni-strict function
+    }
 
     let (id, key) = match read_credential(&args.data_dir).await? {
         Some(i) => i,
@@ -262,7 +273,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
         metrics: metrics.clone(),
     };
     let flood_control = !(args.disable_flood_control || args.disable_ip_origin_check);
-    let server = Server::new(port, cert, state, flood_control, args.enable_metrics, args.sni_strict, args.enable_h3);
+    let server = Server::new(
+        ServerOptions::new(port, cert, state)
+            .flood_control(flood_control)
+            .metrics(args.enable_metrics)
+            .sni_strict(args.sni_strict)
+            .server_header(!args.disable_server_header)
+            .h3(args.enable_h3),
+    );
     let server_handle = server.handle();
 
     info!("Notifying the server that we have finished starting up the client...");
