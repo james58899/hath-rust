@@ -14,6 +14,7 @@ use std::{
 use async_stream::stream;
 use aws_lc_rs::digest;
 use bytes::Bytes;
+use chrono::{DateTime, TimeDelta, Utc};
 use const_hex::decode_to_array;
 use filesize::{file_real_size, file_real_size_fast};
 use filetime::{FileTime, set_file_mtime};
@@ -613,6 +614,11 @@ impl CacheManager {
             return;
         }
 
+        // Minimum cleanup 100MB
+        if need_free < SIZE_100MB {
+            need_free = SIZE_100MB;
+        }
+
         debug!("Start cache cleaner: need_free={}bytes", need_free);
         while need_free > 0 {
             // Select the oldest directory
@@ -629,8 +635,14 @@ impl CacheManager {
                 let (sr, state) = state[0];
                 static_range = sr.clone();
                 target_dir = self.cache_dir.join(&sr[0..2]).join(&sr[2..4]);
-                // 1 day
-                cut_off = FileTime::from_unix_time(state.oldest + 86400, 0);
+                // Set max cleanup cutoff based on the oldest time
+                let offset = match DateTime::from_timestamp_secs(state.oldest).map(|date| Utc::now().signed_duration_since(date)) {
+                    Some(date) if date > TimeDelta::days(180) => 86400 * 30, // 30 days
+                    Some(date) if date > TimeDelta::days(90) => 86400 * 7,   // 7 days
+                    Some(date) if date > TimeDelta::days(30) => 86400 * 3,   // 3 days
+                    _ => 86400,                                              // Default 1 day
+                };
+                cut_off = FileTime::from_unix_time(state.oldest + offset, 0);
             }
 
             // List files
