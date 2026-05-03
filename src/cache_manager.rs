@@ -31,7 +31,7 @@ use tokio::{
     spawn,
     sync::mpsc::{UnboundedSender, channel},
     task::{block_in_place, spawn_blocking},
-    time::{Instant, sleep_until},
+    time::{MissedTickBehavior, interval},
 };
 use tokio_stream::wrappers::ReadDirStream;
 
@@ -402,13 +402,13 @@ impl CacheManager {
         let manager = Arc::downgrade(&new);
         spawn(async move {
             // Check cache size every 10min
-            let mut next_run = Instant::now();
+            let mut interval = interval(Duration::from_mins(10));
+            interval.set_missed_tick_behavior(MissedTickBehavior::Delay);
             loop {
-                sleep_until(next_run).await;
+                interval.tick().await;
                 if let Some(manager) = manager.upgrade() {
                     manager.save_state().await;
                     manager.check_cache_usage().await;
-                    next_run = Instant::now() + Duration::from_secs(600);
                 } else {
                     break;
                 }

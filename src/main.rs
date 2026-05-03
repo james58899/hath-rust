@@ -23,7 +23,7 @@ use tokio::{
         mpsc::{self, Sender, UnboundedReceiver},
         watch,
     },
-    time::{Instant, sleep, sleep_until},
+    time::{Instant, MissedTickBehavior, interval, sleep},
 };
 
 use crate::{
@@ -371,9 +371,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let cache_manager3 = cache_manager.clone();
     let keepalive = tokio::spawn(async move {
         let mut counter: u32 = 0;
-        let mut next_run = Instant::now() + Duration::from_secs(10);
+        let mut interval = interval(Duration::from_secs(10));
+        interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
         loop {
-            sleep_until(next_run).await;
+            interval.tick().await;
 
             if !client3.is_running() {
                 break;
@@ -394,7 +395,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
             }
 
             counter = counter.wrapping_add(1);
-            next_run = Instant::now() + Duration::from_secs(10);
             log::logger().flush(); // Flush log every 10s
         }
     });
