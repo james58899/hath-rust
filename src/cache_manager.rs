@@ -697,6 +697,7 @@ impl CacheManager {
             if let Some(state) = self.cache_state.lock().get_mut(&static_range) {
                 state.oldest = new_oldest.unix_seconds();
             }
+            self.save_state().await;
         }
     }
 }
