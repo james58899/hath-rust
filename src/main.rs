@@ -525,7 +525,7 @@ fn build_tray_icon() {
         platform::windows::EventLoopBuilderExtWindows,
     };
     use tray_icon::{
-        MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent,
+        Icon, MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent,
         menu::{Menu, MenuEvent},
     };
 
@@ -537,8 +537,9 @@ fn build_tray_icon() {
         .spawn(|| {
             let tray_menu = Menu::new(); // TODO nemu
             let _tray_icon = TrayIconBuilder::new()
+                .with_icon(Icon::from_resource(1, None).expect("Icon load failed"))
                 .with_menu(Box::new(tray_menu))
-                .with_tooltip("hath-rust - Hentai@Home but rusty") // TODO icon
+                .with_tooltip("hath-rust - Hentai@Home but rusty")
                 .build()
                 .unwrap();
 
@@ -556,11 +557,11 @@ fn build_tray_icon() {
                     button,
                     button_state,
                 }) = tray_channel.try_recv()
+                    && button == MouseButton::Left
+                    && button_state == MouseButtonState::Up
                 {
-                    if button == MouseButton::Left && button_state == MouseButtonState::Up {
-                        console_hide = !console_hide;
-                        switch_window(console_hide)
-                    }
+                    console_hide = !console_hide;
+                    switch_window(console_hide)
                 }
                 if let Ok(_event) = menu_channel.try_recv() {
                     // TODO

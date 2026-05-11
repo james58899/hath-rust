@@ -29,8 +29,7 @@ fn add_manifest() {
     let version = env!("CARGO_PKG_VERSION");
     let manifest = format!(
         r#"<?xml version="1.0" encoding="UTF-8"?>
-<assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0"
-    xmlns:asmv3="urn:schemas-microsoft-com:asm.v3">
+<assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0" xmlns:asmv3="urn:schemas-microsoft-com:asm.v3">
     <assemblyIdentity type="win32" name="James58899.Hath-rust" version="{version}.0" />
     <compatibility xmlns="urn:schemas-microsoft-com:compatibility.v1">
         <application>
@@ -60,10 +59,13 @@ fn add_manifest() {
     let manifest_path = PathBuf::from(env::var("OUT_DIR").unwrap_or(".".into())).join("hath-rust.exe.manifest");
     fs::write(&manifest_path, &manifest).unwrap();
 
+    println!("cargo::rerun-if-changed=app.ico");
+
     let mut res = tauri_winres::WindowsResource::new();
     res.set("OriginalFilename", "hath-rust.exe");
     res.set("FileDescription", "hath-rust - Hentai@Home but rusty");
     res.set("LegalCopyright", "GPL-3.0-or-later");
     res.set_manifest_file(manifest_path.to_str().unwrap());
+    res.set_icon_with_id("app.ico", "1");
     res.compile().unwrap()
 }
