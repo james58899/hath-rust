@@ -528,6 +528,13 @@ fn build_tray_icon() {
         Icon, MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent,
         menu::{Menu, MenuEvent},
     };
+    use windows::{
+        Win32::{
+            System::LibraryLoader::GetModuleHandleW,
+            UI::WindowsAndMessaging::{GetSystemMetrics, IMAGE_ICON, LR_SHARED, LoadImageW, SM_CXSMICON},
+        },
+        core::PWSTR,
+    };
 
     // Show console
     switch_window(false);
@@ -535,9 +542,14 @@ fn build_tray_icon() {
     thread::Builder::new()
         .name("TrayEvent".into())
         .spawn(|| {
+            // Load icon
+            let instence = unsafe { GetModuleHandleW(PWSTR::default()) }.map(Into::into).ok();
+            let size = unsafe { GetSystemMetrics(SM_CXSMICON) };
+            let icon = unsafe { LoadImageW(instence, PWSTR(1 as _), IMAGE_ICON, size, size, LR_SHARED) }.expect("Icon load failed");
+
             let tray_menu = Menu::new(); // TODO nemu
             let _tray_icon = TrayIconBuilder::new()
-                .with_icon(Icon::from_resource(1, None).expect("Icon load failed"))
+                .with_icon(Icon::from_handle(icon.0 as _))
                 .with_menu(Box::new(tray_menu))
                 .with_tooltip("hath-rust - Hentai@Home but rusty")
                 .build()
@@ -573,9 +585,19 @@ fn build_tray_icon() {
 
 #[cfg(windows)]
 fn switch_window(hide: bool) {
-    use windows::Win32::{
-        System::Console::{AllocConsole, GetConsoleWindow},
-        UI::WindowsAndMessaging::{DeleteMenu, GetSystemMenu, MF_BYCOMMAND, SC_CLOSE, SW_HIDE, SW_SHOW, ShowWindow},
+    use windows::{
+        Win32::{
+            Foundation::{LPARAM, WPARAM},
+            System::{
+                Console::{AllocConsole, GetConsoleWindow},
+                LibraryLoader::GetModuleHandleW,
+            },
+            UI::WindowsAndMessaging::{
+                DeleteMenu, GetSystemMenu, GetSystemMetrics, ICON_BIG, ICON_SMALL, IMAGE_ICON, LR_SHARED, LoadImageW, MF_BYCOMMAND,
+                PostMessageW, SC_CLOSE, SM_CXICON, SM_CXSMICON, SW_HIDE, SW_SHOW, ShowWindow, WM_SETICON,
+            },
+        },
+        core::PCWSTR,
     };
 
     let mut window = unsafe { GetConsoleWindow() };
@@ -592,8 +614,26 @@ fn switch_window(hide: bool) {
     }
 
     if !window.is_invalid() {
-        unsafe {
-            let _ = ShowWindow(window, if hide { SW_HIDE } else { SW_SHOW });
+        // Switch window hide state
+        let _ = unsafe { ShowWindow(window, if hide { SW_HIDE } else { SW_SHOW }) };
+
+        // Workaround icon size
+        if !hide {
+            let instence = unsafe { GetModuleHandleW(PCWSTR::default()) }.map(Into::into).ok();
+            let size_small = unsafe { GetSystemMetrics(SM_CXSMICON) };
+            // Title icon
+            if let Ok(icon) = unsafe { LoadImageW(instence, PCWSTR(1 as _), IMAGE_ICON, size_small, size_small, LR_SHARED) }
+                && !icon.is_invalid()
+            {
+                let _ = unsafe { PostMessageW(Some(window), WM_SETICON, WPARAM(ICON_SMALL as _), LPARAM(icon.0 as _)) };
+            }
+            // Taskbar icon
+            let size_large = unsafe { GetSystemMetrics(SM_CXICON) };
+            if let Ok(icon) = unsafe { LoadImageW(instence, PCWSTR(1 as _), IMAGE_ICON, size_large, size_large, LR_SHARED) }
+                && !icon.is_invalid()
+            {
+                let _ = unsafe { PostMessageW(Some(window), WM_SETICON, WPARAM(ICON_BIG as _), LPARAM(icon.0 as _)) };
+            }
         }
     }
 }
