@@ -132,7 +132,7 @@ jobs:
         name: hath-rust-${{ matrix.target }}
         path: target/${{ matrix.target }}/release/hath-rust
   build-windows:
-    runs-on: windows-latest
+    runs-on: windows-2025-vs2026
     if: inputs.skip-windows != true
     strategy:
       fail-fast: false
