@@ -280,14 +280,18 @@ async fn main() -> Result<(), Box<dyn Error>> {
         local_addr: args.host.clone(),
     };
     let flood_control = !(args.disable_flood_control || args.disable_ip_origin_check);
-    let server = Server::new(
+    let Some(server) = Server::new(
         ServerOptions::new(port, host.unwrap_or(Ipv4Addr::new(0, 0, 0, 0).into()), cert, state)
             .flood_control(flood_control)
             .metrics(args.enable_metrics)
             .sni_strict(args.sni_strict)
             .server_header(!args.disable_server_header)
             .h3(args.enable_h3),
-    );
+    ) else {
+        error!("Server start failed.");
+        sleep(Duration::from_secs(5)).await;
+        return Err(error::Error::ServerStartFail.into());
+    };
     let server_handle = server.handle();
 
     info!("Notifying the server that we have finished starting up the client...");

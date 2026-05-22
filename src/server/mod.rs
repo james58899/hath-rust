@@ -1,4 +1,5 @@
 use std::{
+    io,
     net::{IpAddr, SocketAddr},
     sync::{
         Arc,
@@ -113,7 +114,7 @@ impl ServerOptions {
 }
 
 impl Server {
-    pub fn new(option: ServerOptions) -> Self {
+    pub fn new(option: ServerOptions) -> Option<Self> {
         let port = option.port;
         let host = option.host;
         let flood_control = option.flood_control;
@@ -123,7 +124,13 @@ impl Server {
         let handle = Arc::new(ServerHandle::new(cert_store.clone()));
 
         let acceptor = TlsAcceptor::from(Arc::new(create_ssl_config(provider.clone(), cert_store.clone())));
-        let listener = bind(SocketAddr::from((host.clone(), port)));
+        let listener = match bind(SocketAddr::from((host.clone(), port))) {
+            Ok(listener) => listener,
+            Err(err) => {
+                error!("Bind port error: {err}");
+                return None;
+            }
+        };
 
         let mut http = http1::Builder::new();
         http.keep_alive(false)
@@ -156,11 +163,11 @@ impl Server {
             None
         };
 
-        Self {
+        Some(Self {
             handle,
             accept_task,
             accept_task_h3,
-        }
+        })
     }
 
     pub fn handle(&self) -> Arc<ServerHandle> {
@@ -231,22 +238,18 @@ fn create_quic_config(provider: Arc<CryptoProvider>, cert_store: Arc<CertStore>)
     server_config
 }
 
-fn bind(addr: SocketAddr) -> TcpListener {
+fn bind(addr: SocketAddr) -> io::Result<TcpListener> {
     let socket = match addr {
         SocketAddr::V4(_) => TcpSocket::new_v4(),
         SocketAddr::V6(_) => TcpSocket::new_v6(),
-    }
-    .expect("Server listener socket create error.");
+    }?;
 
     let _ = socket.set_reuseaddr(true); // Without this need wait all connection close before restart
     let _ = socket.set_keepalive(true);
     let _ = socket.set_nodelay(true);
 
-    socket.bind(addr).expect("Server listener bind error.");
-    socket
-        .listen(512)
-        .inspect(|_| info!("Server is listen on {addr}"))
-        .expect("Server listener listen error.")
+    socket.bind(addr)?;
+    socket.listen(512).inspect(|_| info!("Server is listen on {addr}"))
 }
 
 async fn accept(listener: &mut TcpListener) -> (TcpStream, SocketAddr) {
