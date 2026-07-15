@@ -1,8 +1,12 @@
-use std::{fmt::Error, sync::atomic::AtomicU64, time::Instant};
+use std::{
+    fmt::{Error, Write},
+    sync::atomic::AtomicU64,
+    time::Instant,
+};
 
 use prometheus_client::{
     collector::Collector,
-    encoding::{DescriptorEncoder, EncodeLabelSet, EncodeLabelValue, EncodeMetric},
+    encoding::{DescriptorEncoder, EncodeLabelSet, EncodeLabelValue, EncodeMetric, LabelValueEncoder},
     metrics::{
         counter::{ConstCounter, Counter},
         family::Family,
@@ -24,9 +28,11 @@ pub const LABEL_CACHE_DOWNLOAD: CacheFetchLabels = CacheFetchLabels {
 
 pub struct Metrics {
     pub registry: Registry,
-    pub cache_sent: Counter,
+    pub cache_sent: Family<RequestLabel, Counter>,
+    pub cache_sent_status: Family<StatusLabel, Counter>,
     pub cache_sent_size: Family<Vec<(String, String)>, Counter>,
     pub cache_sent_duration: Family<Vec<(String, String)>, Histogram>,
+    pub cache_response_size: Histogram,
     pub cache_received: Counter,
     pub cache_received_size: Counter,
     pub cache_received_duration: Family<CacheFetchLabels, Histogram>,
@@ -39,6 +45,7 @@ pub struct Metrics {
     pub download_file_count: Counter,
     pub download_size: Counter,
     pub download_duration: Histogram,
+    pub serve_timeout: Counter,
 }
 
 impl Metrics {
@@ -46,7 +53,8 @@ impl Metrics {
         let mut registry = Registry::with_prefix("hath");
 
         // Request metrics
-        let cache_sent = Counter::default();
+        let cache_sent = Family::<RequestLabel, Counter>::default();
+        let cache_sent_status = Family::<StatusLabel, Counter>::default();
         let cache_sent_size = Family::<Vec<(String, String)>, Counter>::default();
         let cache_sent_duration = Family::<Vec<(String, String)>, Histogram>::new_with_constructor(|| {
             Histogram::new([0.01, 0.025, 0.05, 0.1, 0.2, 0.5, 1.0, 1.5, 2.0, 3.0, 5.0, 10.0, 30.0])
@@ -57,9 +65,13 @@ impl Metrics {
             Histogram::new([0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0])
         });
         let connections = Gauge::<u64, AtomicU64>::default();
+        // Response body size distribution (GET only): 10 KiB, ×4 per bucket, up to 20 MiB.
+        let cache_response_size = Histogram::new([10240.0, 40960.0, 163840.0, 655360.0, 2621440.0, 10485760.0, 20971520.0]);
         registry.register("cache_sent", "Number of files sent", cache_sent.clone());
+        registry.register("cache_sent_status", "Number of responses sent by HTTP status code", cache_sent_status.clone());
         registry.register_with_unit("cache_sent_size", "Number of bytes sent", Bytes, cache_sent_size.clone());
         registry.register_with_unit("cache_sent_duration", "Histogram of cache sent", Seconds, cache_sent_duration.clone());
+        registry.register_with_unit("cache_response_size", "Histogram of response body size (GET only)", Bytes, cache_response_size.clone());
         registry.register("cache_received", "Number of files received", cache_received.clone());
         registry.register_with_unit("cache_received_size", "Number of bytes received", Bytes, cache_received_size.clone());
         registry.register_with_unit("cache_received_duration", "Histogram of cache received", Seconds, cache_received_duration.clone());
@@ -88,11 +100,17 @@ impl Metrics {
         // Uptime
         registry.register_collector(Box::new(Uptime::new()));
 
+        // Serve scheduler
+        let serve_timeout = Counter::default();
+        registry.register("serve_timeout", "Number of requests that hit the serve timeout", serve_timeout.clone());
+
         Self {
             registry,
             cache_sent,
+            cache_sent_status,
             cache_sent_size,
             cache_sent_duration,
+            cache_response_size,
             cache_received,
             cache_received_size,
             cache_received_duration,
@@ -105,8 +123,43 @@ impl Metrics {
             download_file_count,
             download_size,
             download_duration,
+            serve_timeout,
         }
     }
+
+    /// Register the serve-scheduler collector. Called once the scheduler is
+    /// spawned, since the collector borrows lock-free handles into its limiters.
+    pub fn register_scheduler(&mut self, collector: crate::ratelimit::SchedulerCollector) {
+        self.registry.register_collector(Box::new(collector));
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum MethodLabel {
+    Get,
+    Head,
+    Other,
+}
+
+impl EncodeLabelValue for MethodLabel {
+    fn encode(&self, encoder: &mut LabelValueEncoder) -> Result<(), Error> {
+        encoder.write_str(match self {
+            MethodLabel::Get => "GET",
+            MethodLabel::Head => "HEAD",
+            MethodLabel::Other => "OTHER",
+        })
+    }
+}
+
+#[derive(Clone, Debug, Eq, Hash, PartialEq, EncodeLabelSet)]
+pub struct RequestLabel {
+    pub method: MethodLabel,
+}
+
+#[derive(Clone, Debug, Eq, Hash, PartialEq, EncodeLabelSet)]
+pub struct StatusLabel {
+    pub code: u16,
+    pub method: MethodLabel,
 }
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq, EncodeLabelSet)]

@@ -1,5 +1,4 @@
 use std::{
-    cmp::min,
     collections::HashMap,
     net::IpAddr,
     str::FromStr,
@@ -44,7 +43,6 @@ pub struct Settings {
     size_limit: AtomicU64,
     throttle_bytes: AtomicU64,
     disable_logging: AtomicBool,
-    max_connection: AtomicU64,
     disable_ip_check: bool,
 }
 
@@ -79,15 +77,6 @@ impl Settings {
         self.size_limit.load(Ordering::Relaxed)
     }
 
-    pub fn max_connection(&self) -> u64 {
-        let max = self.max_connection.load(Ordering::Relaxed);
-        if max != 0 {
-            max
-        } else {
-            20 + min(480, self.throttle_bytes.load(Ordering::Relaxed) / 10000)
-        }
-    }
-
     pub fn disable_logging(&self) -> bool {
         self.disable_logging.load(Ordering::Relaxed)
     }
@@ -107,12 +96,9 @@ impl Settings {
 }
 
 impl RPCClient {
-    pub fn new(id: i32, key: &str, disable_ip_check: bool, max_connection: u64, bootstrap_server: Option<&str>) -> Self {
+    pub fn new(id: i32, key: &str, disable_ip_check: bool, bootstrap_server: Option<&str>, local_addr: Option<IpAddr>) -> Self {
         if disable_ip_check {
             warn!("Disable server command ip check!");
-        }
-        if max_connection > 0 {
-            warn!("Override max connection: {}", max_connection);
         }
 
         let host = bootstrap_server.unwrap_or(DEFAULT_SERVER);
@@ -121,14 +107,13 @@ impl RPCClient {
             clock_offset: AtomicI64::new(0),
             id,
             key: key.to_string(),
-            reqwest: create_http_client(Duration::from_secs(600), None),
+            reqwest: create_http_client(Duration::from_secs(600), None, local_addr.clone()),
             rpc_servers: RwLock::new(vec![]),
             running: AtomicBool::new(false),
             settings: Arc::new(Settings {
                 size_limit: AtomicU64::new(u64::MAX),
                 throttle_bytes: AtomicU64::new(0),
                 disable_logging: AtomicBool::new(false),
-                max_connection: AtomicU64::new(max_connection),
                 disable_ip_check,
             }),
         }

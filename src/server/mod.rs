@@ -1,5 +1,5 @@
 use std::{
-    net::SocketAddr,
+    net::{IpAddr, SocketAddr},
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
@@ -21,7 +21,7 @@ use hyper_util::{
     rt::{TokioIo, TokioTimer},
     service::TowerToHyperService,
 };
-use log::{error, info};
+use log::{debug, info};
 use parking_lot::Mutex;
 use quinn::{BloomTokenLog, Endpoint, TransportConfig, ValidationTokenConfig, crypto::rustls::QuicServerConfig};
 use rustls::{
@@ -44,7 +44,7 @@ use tower_http::set_header::SetResponseHeaderLayer;
 pub use crate::server::{cert::ParsedCert, util::ClientAddr};
 use crate::{
     AppState, middleware, route,
-    server::{cert::CertStore, util::FloodControl},
+    server::{cert::CertStore, util::FloodControl, util::ResetConnection},
     util::{aes_support, ssl_provider},
 };
 
@@ -61,25 +61,29 @@ pub struct Server {
 
 pub struct ServerOptions {
     port: u16,
+    host: IpAddr,
     cert: ParsedCert,
     data: AppState,
     flood_control: bool,
     enable_metrics: bool,
     sni_strict: bool,
     server_header: bool,
+    absolute_timeout: Option<Duration>,
     h3: bool,
 }
 
 impl ServerOptions {
-    pub fn new(port: u16, cert: ParsedCert, data: AppState) -> Self {
+    pub fn new(port: u16, host: IpAddr, cert: ParsedCert, data: AppState) -> Self {
         Self {
             port,
+            host,
             cert,
             data,
             flood_control: true,
             enable_metrics: false,
             sni_strict: false,
             server_header: true,
+            absolute_timeout: None,
             h3: false,
         }
     }
@@ -104,6 +108,11 @@ impl ServerOptions {
         self
     }
 
+    pub fn absolute_timeout(mut self, timeout: Option<Duration>) -> Self {
+        self.absolute_timeout = timeout;
+        self
+    }
+
     pub fn h3(mut self, enabled: bool) -> Self {
         self.h3 = enabled;
         self
@@ -113,6 +122,7 @@ impl ServerOptions {
 impl Server {
     pub fn new(option: ServerOptions) -> Self {
         let port = option.port;
+        let host = option.host;
         let flood_control = option.flood_control;
 
         let provider = Arc::new(ssl_provider());
@@ -120,7 +130,7 @@ impl Server {
         let handle = Arc::new(ServerHandle::new(cert_store.clone()));
 
         let acceptor = TlsAcceptor::from(Arc::new(create_ssl_config(provider.clone(), cert_store.clone())));
-        let listener = bind(SocketAddr::from(([0, 0, 0, 0], port)));
+        let listener = bind(SocketAddr::from((host.clone(), port)));
 
         let mut http = http1::Builder::new();
         http.keep_alive(false)
@@ -141,14 +151,29 @@ impl Server {
 
         // Accept loop
         let h3_port = if option.h3 { Some(port) } else { None };
-        let accept_task = tokio::spawn(accept_loop(handle.clone(), listener, acceptor, http, router.clone(), flood_control, h3_port));
+        let accept_task = tokio::spawn(accept_loop(
+            handle.clone(),
+            listener,
+            acceptor,
+            http,
+            router.clone(),
+            flood_control,
+            h3_port,
+            option.absolute_timeout,
+        ));
 
         // h3
         let accept_task_h3 = if option.h3 {
             info!("Enable experimental HTTP3 support. Please ensure UDP port {port} is open.");
             let quinn_config = create_quic_config(provider, cert_store);
-            let endpoint = quinn::Endpoint::server(quinn_config, SocketAddr::from(([0, 0, 0, 0], port))).unwrap();
-            Some(tokio::spawn(accept_loop_h3(handle.clone(), endpoint, router, flood_control)))
+            let endpoint = quinn::Endpoint::server(quinn_config, SocketAddr::from((host, port))).unwrap();
+            Some(tokio::spawn(accept_loop_h3(
+                handle.clone(),
+                endpoint,
+                router,
+                flood_control,
+                option.absolute_timeout,
+            )))
         } else {
             None
         };
@@ -263,6 +288,7 @@ async fn accept_loop(
     mut router: Router,
     flood_control: bool,
     h3_port: Option<u16>,
+    absolute_timeout: Option<Duration>,
 ) {
     let (shutdown_tx, _) = watch::channel(());
     let mut flood_control = if flood_control { Some(FloodControl::new()) } else { None };
@@ -310,7 +336,17 @@ async fn accept_loop(
             // Process request
             let stream = TokioIo::new(ssl_stream); // Tokio to hyper trait
             let service = TowerToHyperService::new(service); // Tower to hyper trait
-            let fut = timeout(Duration::from_secs(181), http.serve_connection(stream, service));
+            let fut = async {
+                let serve = http.serve_connection(stream, service);
+                match absolute_timeout {
+                    Some(duration) => {
+                        let _ = timeout(duration, serve).await;
+                    }
+                    None => {
+                        let _ = serve.await;
+                    }
+                }
+            };
             pin_mut!(fut);
             tokio::select! {
                 biased;
@@ -331,7 +367,13 @@ async fn accept_loop(
     let _ = timeout(Duration::from_secs(15), shutdown_tx.closed()).await;
 }
 
-async fn accept_loop_h3(handle: Arc<ServerHandle>, endpoint: Endpoint, router: Router, flood_control: bool) {
+async fn accept_loop_h3(
+    handle: Arc<ServerHandle>,
+    endpoint: Endpoint,
+    router: Router,
+    flood_control: bool,
+    absolute_timeout: Option<Duration>,
+) {
     let (shutdown_tx, _) = watch::channel(());
     let flood_control = if flood_control {
         Some(Arc::new(Mutex::new(FloodControl::new())))
@@ -404,59 +446,76 @@ async fn accept_loop_h3(handle: Arc<ServerHandle>, endpoint: Endpoint, router: R
                 let router = router.clone();
                 let request_done = close_wait.subscribe();
                 tokio::spawn(async move {
-                    // Read request
-                    let (req, mut stream) = match resolver.resolve_request().await {
-                        Ok(req) => req,
-                        Err(_) => return,
-                    };
+                    let serve = async move {
+                        // Read request
+                        let (req, mut stream) = match resolver.resolve_request().await {
+                            Ok(req) => req,
+                            Err(_) => return,
+                        };
 
-                    if blocked {
-                        stream.stop_stream(Code::H3_EXCESSIVE_LOAD);
-                        return;
-                    }
+                        if blocked {
+                            stream.stop_stream(Code::H3_EXCESSIVE_LOAD);
+                            return;
+                        }
 
-                    let mut request = Request::builder().version(req.version()).method(req.method()).uri(req.uri());
-                    *request.headers_mut().unwrap() = req.headers().clone();
-                    let request = request.body(Body::empty()).unwrap(); // We don't read body
+                        let mut request = Request::builder().version(req.version()).method(req.method()).uri(req.uri());
+                        *request.headers_mut().unwrap() = req.headers().clone();
+                        let request = request.body(Body::empty()).unwrap(); // We don't read body
 
-                    // ref: https://github.com/hyperium/h3/issues/261#issuecomment-2352838801
-                    // Call Service
-                    let mut service = Extension(ClientAddr(addr)).layer(router.clone());
-                    let (parts, mut body) = service.call(request).await.unwrap().into_parts();
+                        // ref: https://github.com/hyperium/h3/issues/261#issuecomment-2352838801
+                        // Call Service
+                        let mut service = Extension(ClientAddr(addr)).layer(router.clone());
+                        let (parts, mut body) = service.call(request).await.unwrap().into_parts();
 
-                    // Build response
-                    let mut response = Response::from_parts(parts, ());
-                    let header = response.headers_mut();
-                    header.remove(CONNECTION); // H3 not allow connection header
-                    header.entry(DATE).or_insert_with(date_header::update_and_header_value); // Add date header
+                        // Pre-body rejection (serve timeout / capacity): reset the request
+                        // stream without sending any response head, so no status leaks.
+                        if parts.extensions.get::<ResetConnection>().is_some() {
+                            stream.stop_stream(Code::H3_REQUEST_CANCELLED);
+                            return;
+                        }
 
-                    // Send header
-                    if (stream.send_response(response).await).is_err() {
-                        return;
-                    }
-                    // Send body and trailers
-                    while let Some(chunk) = body.frame().await {
-                        match chunk {
-                            Ok(frame) if frame.is_data() => {
-                                if stream.send_data(frame.into_data().unwrap()).await.is_err() {
+                        // Build response
+                        let mut response = Response::from_parts(parts, ());
+                        let header = response.headers_mut();
+                        header.remove(CONNECTION); // H3 not allow connection header
+                        header.entry(DATE).or_insert_with(date_header::update_and_header_value); // Add date header
+
+                        // Send header
+                        if (stream.send_response(response).await).is_err() {
+                            return;
+                        }
+                        // Send body and trailers
+                        while let Some(chunk) = body.frame().await {
+                            match chunk {
+                                Ok(frame) if frame.is_data() => {
+                                    if stream.send_data(frame.into_data().unwrap()).await.is_err() {
+                                        return;
+                                    }
+                                }
+                                Ok(frame) => {
+                                    if stream.send_trailers(frame.into_trailers().unwrap()).await.is_err() {
+                                        return;
+                                    }
+                                }
+                                Err(err) => {
+                                    // Includes intentional load-shed resets (the body
+                                    // errors to reset the stream once the head is sent).
+                                    debug!("{{h3/{addr}}} Failed to read stream: {err}");
+                                    stream.stop_stream(Code::H3_REQUEST_CANCELLED);
                                     return;
                                 }
-                            }
-                            Ok(frame) => {
-                                if stream.send_trailers(frame.into_trailers().unwrap()).await.is_err() {
-                                    return;
-                                }
-                            }
-                            Err(err) => {
-                                error!("{{h3/{addr}}} Failed to read stream: {err}");
-                                stream.stop_stream(Code::H3_INTERNAL_ERROR);
-                                return;
                             }
                         }
+                        while let Ok(Some(_)) = stream.recv_data().await {} // All data must be read to receive ACK
+                        let _ = stream.finish().await;
+                        drop(request_done); // Notify request complete
+                    };
+                    match absolute_timeout {
+                        Some(duration) => {
+                            let _ = timeout(duration, serve).await;
+                        }
+                        None => serve.await,
                     }
-                    while let Ok(Some(_)) = stream.recv_data().await {} // All data must be read to receive ACK
-                    let _ = stream.finish().await;
-                    drop(request_done); // Notify request complete
                 });
             }
         });

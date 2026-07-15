@@ -1,4 +1,4 @@
-use std::time::Duration;
+use std::{net::IpAddr, time::Duration};
 
 use aws_lc_rs::digest;
 use const_format::concatcp;
@@ -20,7 +20,7 @@ pub fn string_to_hash(str: String) -> String {
     const_hex::encode(digest::digest(&digest::SHA1_FOR_LEGACY_USE_ONLY, str.as_bytes()))
 }
 
-pub fn create_http_client(timeout: Duration, proxy: Option<Proxy>) -> reqwest::Client {
+pub fn create_http_client(timeout: Duration, proxy: Option<Proxy>, local_addr: Option<IpAddr>) -> reqwest::Client {
     let root_store = RootCertStore::from_iter(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
     let mut tls = ClientConfig::builder_with_provider(ssl_provider().into())
         .with_safe_default_protocol_versions()
@@ -41,7 +41,8 @@ pub fn create_http_client(timeout: Duration, proxy: Option<Proxy>) -> reqwest::C
         .pool_idle_timeout(Duration::from_secs(3600))
         .pool_max_idle_per_host(8)
         .http1_title_case_headers()
-        .http1_only();
+        .http1_only()
+        .local_address(local_addr);
 
     if let Some(proxy) = proxy {
         builder = builder.proxy(proxy);

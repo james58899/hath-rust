@@ -1,7 +1,10 @@
 use std::{
     cmp::max,
     pin::Pin,
-    sync::Arc,
+    sync::{
+        Arc,
+        atomic::{AtomicU64, Ordering},
+    },
     task::{Context, Poll},
     time::Instant,
 };
@@ -18,16 +21,23 @@ use log::info;
 use pin_project_lite::pin_project;
 use tower::{Layer, Service};
 
-use crate::{metrics::Metrics, server::ClientAddr};
+use crate::{
+    metrics::{MethodLabel, Metrics, RequestLabel, StatusLabel},
+    server::ClientAddr,
+};
 
 #[derive(Clone)]
 pub(super) struct Logger {
     metrics: Arc<Metrics>,
+    seq: Arc<AtomicU64>,
 }
 
 impl Logger {
     pub fn new(metrics: Arc<Metrics>) -> Self {
-        Logger { metrics }
+        Logger {
+            metrics,
+            seq: Arc::new(AtomicU64::new(0)),
+        }
     }
 }
 
@@ -37,6 +47,7 @@ impl<S> Layer<S> for Logger {
     fn layer(&self, inner: S) -> Self::Service {
         LoggerMiddleware {
             metrics: self.metrics.clone(),
+            seq: self.seq.clone(),
             service: inner,
         }
     }
@@ -45,6 +56,7 @@ impl<S> Layer<S> for Logger {
 #[derive(Clone)]
 pub(super) struct LoggerMiddleware<S> {
     metrics: Arc<Metrics>,
+    seq: Arc<AtomicU64>,
     service: S,
 }
 
@@ -63,7 +75,15 @@ where
 
     fn call(&mut self, req: Request) -> Self::Future {
         let start = Instant::now();
-        let count = self.metrics.cache_sent.inc() + 1;
+        let method_label = if req.method() == Method::GET {
+            MethodLabel::Get
+        } else if req.method() == Method::HEAD {
+            MethodLabel::Head
+        } else {
+            MethodLabel::Other
+        };
+        self.metrics.cache_sent.get_or_create(&RequestLabel { method: method_label }).inc();
+        let count = self.seq.fetch_add(1, Ordering::Relaxed) + 1;
         let ip = req
             .extensions()
             .get::<ClientAddr>()
@@ -84,6 +104,7 @@ where
         Box::pin(async move {
             let res = fut.await?;
             let code = res.status().as_u16();
+            metrics.cache_sent_status.get_or_create(&StatusLabel { code, method: method_label }).inc();
             let mut size = 0;
 
             if !is_head && let Some(Ok(i)) = res.headers().get(CONTENT_LENGTH).map(HeaderValue::to_str) {
@@ -100,6 +121,7 @@ where
                 start,
                 body_start: Instant::now(),
                 version,
+                is_get: method_label == MethodLabel::Get,
                 metrics,
             }))
         })
@@ -117,6 +139,7 @@ pin_project! {
         start: std::time::Instant,
         body_start: std::time::Instant,
         version: Version,
+        is_get: bool,
         metrics: Arc<Metrics>,
     }
 
@@ -133,6 +156,9 @@ pin_project! {
             // TODO replace label with enum
             this.metrics.cache_sent_size.get_or_create(&vec![("version".to_owned(), format!("{:?}", this.version))]).inc_by(this.size);
             this.metrics.cache_sent_duration.get_or_create(&vec![("version".to_owned(), format!("{:?}", this.version))]).observe(this.start.elapsed().as_secs_f64());
+            if this.is_get {
+                this.metrics.cache_response_size.observe(this.size as f64);
+            }
         }
     }
 }

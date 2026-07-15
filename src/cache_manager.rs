@@ -2,7 +2,7 @@ use std::{
     collections::HashMap,
     fmt::Display,
     fs::Metadata,
-    io::Error,
+    io::{Error, SeekFrom},
     path::{Path, PathBuf},
     sync::{
         Arc,
@@ -13,7 +13,7 @@ use std::{
 
 use async_stream::stream;
 use aws_lc_rs::digest;
-use bytes::Bytes;
+use bytes::{Bytes, BytesMut};
 use chrono::{DateTime, TimeDelta, Utc};
 use const_hex::decode_to_array;
 use filesize::{file_real_size, file_real_size_fast};
@@ -26,17 +26,16 @@ use serde::{Deserialize, Serialize};
 use tempfile::TempPath;
 use tokio::{
     fs::{DirEntry, File, copy, create_dir_all, metadata, read_dir, remove_dir_all, remove_file, rename},
-    io::{AsyncReadExt, AsyncWriteExt},
-    runtime::{Builder, Handle, Runtime},
+    io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt},
     spawn,
     sync::mpsc::{UnboundedSender, channel},
-    task::{block_in_place, spawn_blocking},
+    task::spawn_blocking,
     time::{MissedTickBehavior, interval},
 };
 use tokio_stream::wrappers::ReadDirStream;
+use tokio_util::io::ReaderStream;
 
 use crate::{
-    file_reader::FileReader,
     metrics::Metrics,
     rpc::{InitSettings, Settings},
 };
@@ -49,7 +48,6 @@ pub struct CacheManager {
     cache_state_path: PathBuf,
     temp_dir: PathBuf,
     size_limit: AtomicU64,
-    io_pool: Option<Runtime>,
     metrics: Arc<Metrics>,
 }
 
@@ -108,15 +106,6 @@ impl Default for CacheState {
     }
 }
 
-impl Drop for CacheManager {
-    fn drop(&mut self) {
-        // IO Pool need shutdown in blocking context
-        if let Some(io_pool) = self.io_pool.take() {
-            block_in_place(|| io_pool.shutdown_background());
-        }
-    }
-}
-
 impl CacheManager {
     pub async fn new(
         config: CacheConfig,
@@ -126,14 +115,12 @@ impl CacheManager {
         shutdown: UnboundedSender<()>,
         metrics: Arc<Metrics>,
     ) -> Result<Arc<Self>, Error> {
-        let io_pool = Builder::new_multi_thread().thread_name("IO-Worker").worker_threads(20).build()?;
         let new = Arc::new(Self {
             cache_dir: config.cache_dir.clone(),
             cache_state: Default::default(),
             cache_state_path: config.data_dir.join("cache_state.dat"),
             temp_dir: config.temp_dir.clone(),
             size_limit: AtomicU64::new(u64::MAX),
-            io_pool: Some(io_pool),
             metrics,
         });
         new.update_settings(settings);
@@ -220,22 +207,15 @@ impl CacheManager {
         let path = info.to_path(&self.cache_dir);
 
         // Check exists and open file
-        let io_pool = self.get_io_pool();
-        let path2 = path.clone();
-        let Ok(Ok(metadata)) = io_pool.spawn(async move { std::fs::metadata(&path2) }).await else {
+        let Ok(metadata) = metadata(&path).await else {
             return CacheFileResult::NotFound;
         };
         if !metadata.is_file() || metadata.len() != info.size() as u64 {
             warn!("Unexpected cache file metadata: path={:?} type={:?}, size={}", path, metadata.file_type(), metadata.len());
             return CacheFileResult::NotFound;
         }
-        let path2 = path.clone();
-        let mut file_reader = match io_pool.spawn(async move { std::fs::File::open(&path2) }).await {
-            Ok(Ok(file)) => FileReader::new(io_pool.clone(), file, 64 * 1024), // 64KiB buffer
-            Ok(Err(err)) => {
-                error!("Open cache file error: path={:?}, err={}", &path, err);
-                return CacheFileResult::NotFound;
-            }
+        let mut file = match File::open(&path).await {
+            Ok(file) => file,
             Err(err) => {
                 error!("Open cache file error: path={:?}, err={}", &path, err);
                 return CacheFileResult::NotFound;
@@ -248,11 +228,11 @@ impl CacheManager {
             // Handle offset for range request
             if let Some(offset) = offset
                 && offset != 0
-                && file_reader.seek(offset).await.is_ok()
+                && file.seek(SeekFrom::Start(offset)).await.is_ok()
             {
-                return CacheFileResult::Partial(file_reader.boxed());
+                return CacheFileResult::Partial(ReaderStream::with_capacity(file, 64 * 1024).boxed());
             }
-            return CacheFileResult::Full(file_reader.boxed());
+            return CacheFileResult::Full(ReaderStream::with_capacity(file, 64 * 1024).boxed());
         }
 
         self.mark_recently_accessed(info).await;
@@ -265,8 +245,9 @@ impl CacheManager {
             let mut hasher = digest::Context::new(&digest::SHA1_FOR_LEGACY_USE_ONLY);
 
             while read_off < file_size {
-                let buffer = match file_reader.read().await {
-                    Ok(buf) => buf,
+                let mut buf = BytesMut::with_capacity(64 * 1024); // 64KiB buffer
+                let buffer = match file.read_buf(&mut buf).await {
+                    Ok(_) => buf.freeze(),
                     Err(err) => {
                         error!("Read cache file error: path={:?}, err={}", &path, err);
                         let _ = tx.send(Err(err)).await;
@@ -392,10 +373,6 @@ impl CacheManager {
         if let Err(err) = file.write_all(&buf).await {
             error!("Write cache state error: err={}", err);
         }
-    }
-
-    fn get_io_pool(&self) -> Handle {
-        self.io_pool.as_ref().map_or_else(|| Handle::current(), |rt| rt.handle().clone())
     }
 
     fn start_background_task(new: Arc<Self>) {

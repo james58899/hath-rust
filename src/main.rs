@@ -1,7 +1,16 @@
 #![windows_subsystem = "windows"]
 #[cfg(not(target_env = "msvc"))]
 use std::ffi::{CStr, c_char};
-use std::{collections::HashMap, error::Error, ops::RangeInclusive, path::Path, sync::Arc, time::Duration};
+use std::{
+    collections::HashMap,
+    error::Error,
+    net::{IpAddr, Ipv4Addr},
+    num::NonZeroU64,
+    ops::RangeInclusive,
+    path::Path,
+    sync::Arc,
+    time::Duration,
+};
 
 use clap::Parser;
 use const_format::formatcp;
@@ -39,11 +48,11 @@ use crate::{
 
 mod cache_manager;
 mod error;
-mod file_reader;
 mod gallery_downloader;
 mod logger;
 mod metrics;
 mod middleware;
+mod ratelimit;
 mod route;
 mod rpc;
 mod server;
@@ -77,6 +86,10 @@ struct Args {
     #[arg(short, long)]
     port: Option<u16>,
 
+    /// Bound host for socket, and local address for outgoing requests (e.g. RPC calls, cache fills)
+    #[arg(long)]
+    host: Option<std::net::IpAddr>,
+
     /// Cache data location
     #[arg(long, default_value_t = String::from("cache"))]
     cache_dir: String,
@@ -105,9 +118,58 @@ struct Args {
     #[arg(long, default_value_t = false)]
     flush_log: bool,
 
-    /// Override the max connection soft limit, should only be used in special cases
-    #[arg(long, default_value_t = 0)]
-    max_connection: u64,
+    /// Seconds allowed for response preparation and initial serve admission.
+    #[arg(long, default_value_t = 30)]
+    serve_timeout: u64,
+
+    /// Optional maximum duration in seconds for an entire request, including body transmission.
+    #[arg(long)]
+    absolute_timeout: Option<NonZeroU64>,
+
+    /// Maximum number of requests allowed to wait in the serve queue; the largest
+    /// queued request is evicted when exceeded.
+    #[arg(long, default_value_t = 800)]
+    serve_queue_limit: usize,
+
+    /// Maximum number of concurrent cache-miss refills; further misses are dropped.
+    #[arg(long, default_value_t = 100)]
+    refill_limit: u64,
+
+    /// Sustained request-rate limit (requests/second).
+    #[arg(long, default_value_t = 100.0)]
+    request_rate: f64,
+
+    /// Request-rate limiter burst tolerance (requests).
+    #[arg(long, default_value_t = 200)]
+    request_burst: u32,
+
+    /// Sustained bandwidth limit (bytes/second). Default 125 MB/s == 1 Gbps.
+    #[arg(long, default_value_t = 125_000_000.0)]
+    traffic_rate: f64,
+
+    /// Bandwidth limiter burst tolerance (bytes).
+    #[arg(long, default_value_t = 250_000_000)]
+    traffic_burst: u32,
+
+    /// Hard cap on the number of requests served concurrently.
+    #[arg(long, default_value_t = 200)]
+    concurrency_limit: usize,
+
+    /// Bandwidth in bytes/second used while a request waits for a normal grant.
+    #[arg(long, default_value_t = NonZeroU64::new(10_000).unwrap())]
+    slow_drain_bandwidth: NonZeroU64,
+
+    /// Maximum number of requests that may transmit in slow-drain mode.
+    #[arg(long, default_value_t = 500)]
+    slow_drain_concurrency: usize,
+
+    /// Sustained rejected requests/second tolerated before reporting overload.
+    #[arg(long, default_value_t = 100.0)]
+    overload_rate: f64,
+
+    /// Minimum seconds between two overload notifications to the RPC server.
+    #[arg(long, default_value_t = 300)]
+    overload_notify_interval: u64,
 
     /// Disable server command ip check, also disable flood control
     #[arg(long, default_value_t = false)]
@@ -160,6 +222,10 @@ pub struct AppState {
     command_channel: Sender<Command>,
     has_proxy: bool,
     metrics: Arc<Metrics>,
+    local_addr: Option<IpAddr>,
+    scheduler: Arc<ratelimit::SchedulerHandle>,
+    refill_limiter: Arc<ratelimit::RefillLimiter>,
+    serve_timeout: Duration,
 }
 
 pub enum Command {
@@ -200,7 +266,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .flush(args.flush_log)
         .console_level(args.quiet);
 
-    let metrics = Arc::new(Metrics::new());
+    let mut metrics = Metrics::new();
 
     info!("Hentai@Home {COMPAT_VERSION} (Rust {VERSION}) starting up");
 
@@ -215,7 +281,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         Some(i) => i,
         None => setup(&args.data_dir).await?,
     };
-    let client = Arc::new(RPCClient::new(id, &key, args.disable_ip_origin_check, args.max_connection, args.rpc_server_ip.as_deref()));
+    let client = Arc::new(RPCClient::new(id, &key, args.disable_ip_origin_check, args.rpc_server_ip.as_deref(), args.host.clone()));
     let init_settings = match client.login().await {
         Ok(settings) => settings,
         Err(err) => {
@@ -235,6 +301,27 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let (shutdown_send, shutdown_recv) = mpsc::unbounded_channel::<()>();
     let settings = client.settings();
     logger.config().write_info(!settings.disable_logging());
+    // Command channel
+    let (tx, mut rx) = mpsc::channel::<Command>(1);
+    let refill_limiter = ratelimit::RefillLimiter::new(args.refill_limit);
+    let scheduler = ratelimit::SchedulerHandle::spawn(
+        ratelimit::SchedulerConfig {
+            queue_limit: args.serve_queue_limit,
+            request_rate: args.request_rate,
+            request_burst: args.request_burst,
+            traffic_rate: args.traffic_rate,
+            traffic_burst: args.traffic_burst,
+            concurrency_limit: args.concurrency_limit,
+            slow_drain_bandwidth: args.slow_drain_bandwidth,
+            slow_drain_concurrency: args.slow_drain_concurrency,
+            overload_rate: args.overload_rate,
+            overload_notify_interval: Duration::from_secs(args.overload_notify_interval),
+        },
+        tx.clone(),
+        refill_limiter.clone(),
+        &mut metrics,
+    );
+    let metrics = Arc::new(metrics);
     let cache_manager = CacheManager::new(
         CacheConfig::new(args.data_dir, args.cache_dir, args.temp_dir),
         settings.clone(),
@@ -257,28 +344,32 @@ async fn main() -> Result<(), Box<dyn Error>> {
         }
         None => None,
     };
-    // Command channel
-    let (tx, mut rx) = mpsc::channel::<Command>(1);
 
     info!("Starting HTTP server...");
     let port = args.port.unwrap_or_else(|| init_settings.client_port());
+    let host = args.host;
     let cert = client.get_cert().await.expect("Failed to get server certificate");
     let state = AppState {
-        reqwest: create_http_client(Duration::from_secs(30), proxy.clone()),
+        reqwest: create_http_client(Duration::from_secs(30), proxy.clone(), args.host.clone()),
         rpc: client.clone(),
         download_state: Default::default(),
         cache_manager: cache_manager.clone(),
         command_channel: tx.clone(),
         has_proxy: proxy.is_some(),
         metrics: metrics.clone(),
+        local_addr: args.host.clone(),
+        scheduler,
+        refill_limiter,
+        serve_timeout: Duration::from_secs(args.serve_timeout),
     };
     let flood_control = !(args.disable_flood_control || args.disable_ip_origin_check);
     let server = Server::new(
-        ServerOptions::new(port, cert, state)
+        ServerOptions::new(port, host.unwrap_or(Ipv4Addr::new(0, 0, 0, 0).into()), cert, state)
             .flood_control(flood_control)
             .metrics(args.enable_metrics)
             .sni_strict(args.sni_strict)
             .server_header(!args.disable_server_header)
+            .absolute_timeout(args.absolute_timeout.map(|timeout| Duration::from_secs(timeout.get())))
             .h3(args.enable_h3),
     );
     let server_handle = server.handle();
@@ -347,7 +438,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 Command::StartDownloader => {
                     let mut downloader = downloader2.lock();
                     if downloader.is_none() {
-                        let new = GalleryDownloader::new(client2.clone(), &args.download_dir, proxy.clone(), metrics2.clone());
+                        let new = GalleryDownloader::new(client2.clone(), &args.download_dir, proxy.clone(), metrics2.clone(), args.host.clone());
                         let downloader3 = downloader2.clone();
                         *downloader = Some(tokio::spawn(async move {
                             new.run().await;

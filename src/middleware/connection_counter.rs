@@ -1,6 +1,6 @@
 use std::{
     pin::Pin,
-    sync::{Arc, atomic::AtomicU64},
+    sync::atomic::AtomicU64,
     task::{Context, Poll},
 };
 
@@ -14,10 +14,7 @@ use http_body::{Frame, SizeHint};
 use pin_project_lite::pin_project;
 use prometheus_client::metrics::gauge::Gauge;
 use scopeguard::{ScopeGuard, guard};
-use tokio::sync::mpsc::Sender;
 use tower::{Layer, Service};
-
-use crate::{Command, rpc::Settings};
 
 #[derive(Clone)]
 pub(super) struct ConnectionCounter {
@@ -27,18 +24,12 @@ pub(super) struct ConnectionCounter {
 #[derive(Clone)]
 struct ConnectionCounterState {
     counter: Gauge<u64, AtomicU64>,
-    settings: Arc<Settings>,
-    command_channel: Sender<Command>,
 }
 
 impl ConnectionCounter {
-    pub fn new(counter: Gauge<u64, AtomicU64>, settings: Arc<Settings>, command_channel: Sender<Command>) -> Self {
+    pub fn new(counter: Gauge<u64, AtomicU64>) -> Self {
         Self {
-            data: ConnectionCounterState {
-                counter,
-                settings,
-                command_channel,
-            },
+            data: ConnectionCounterState { counter },
         }
     }
 }
@@ -75,9 +66,7 @@ where
 
     fn call(&mut self, req: Request) -> Self::Future {
         let counter = self.data.counter.clone();
-        if counter.inc() > (self.data.settings.max_connection() as f64 * 0.8).ceil() as u64 {
-            let _ = self.data.command_channel.try_send(Command::Overload);
-        };
+        counter.inc();
         let guard = guard(counter, move |counter| {
             counter.dec();
         });

@@ -15,6 +15,17 @@ use http_body::SizeHint;
 use log::warn;
 use pin_project_lite::pin_project;
 
+/// Marker inserted into a response's extensions to request that the connection be
+/// dropped/reset instead of the response being delivered. Used for pre-body
+/// rejections (serve timeout, capacity) where no status code should leak.
+///
+/// On HTTP/1.1 the reset is achieved by erroring the body on its first poll,
+/// which makes hyper abort the connection before writing any head. On HTTP/3 the
+/// server loop checks for this marker and resets the request stream *before*
+/// sending a response, so no head is emitted there either.
+#[derive(Clone, Copy)]
+pub struct ResetConnection;
+
 #[derive(Clone)]
 pub struct ClientAddr(pub SocketAddr);
 
