@@ -233,11 +233,11 @@ impl CacheManager {
         let mut file_reader = match io_pool.spawn(async move { std::fs::File::open(&path2) }).await {
             Ok(Ok(file)) => FileReader::new(io_pool.clone(), file, 64 * 1024), // 64KiB buffer
             Ok(Err(err)) => {
-                error!("Open cache file error: path={:?}, err={}", &path, err);
+                error!("Open cache file error: path={:?}, err={}", path, err);
                 return CacheFileResult::NotFound;
             }
             Err(err) => {
-                error!("Open cache file error: path={:?}, err={}", &path, err);
+                error!("Open cache file error: path={:?}, err={}", path, err);
                 return CacheFileResult::NotFound;
             }
         };
@@ -268,7 +268,7 @@ impl CacheManager {
                 let buffer = match file_reader.read().await {
                     Ok(buf) => buf,
                     Err(err) => {
-                        error!("Read cache file error: path={:?}, err={}", &path, err);
+                        error!("Read cache file error: path={:?}, err={}", path, err);
                         let _ = tx.send(Err(err)).await;
                         return;
                     }
@@ -294,7 +294,7 @@ impl CacheManager {
 
             let hash = hasher.finish();
             if hash.as_ref() != info.hash() {
-                warn!("Detected corrupt cache file: path={:?}, hash={:x?}, actual={:x?}", &path, info.hash(), hash);
+                warn!("Detected corrupt cache file: path={:?}, hash={:x?}, actual={:x?}", path, info.hash(), hash);
                 cache_manager.remove_cache(&info).await;
             }
         });
@@ -353,7 +353,7 @@ impl CacheManager {
 
         debug!("Delete cache: {:?}", path);
         if let Err(err) = std::fs::remove_file(&path) {
-            error!("Delete cache file error: path={:?}, err={}", &path, err);
+            error!("Delete cache file error: path={:?}, err={}", path, err);
             return None;
         }
 
@@ -420,7 +420,7 @@ impl CacheManager {
         let path = info.to_path(&self.cache_dir);
         let _ = spawn_blocking(move || {
             if let Err(err) = set_file_mtime(&path, FileTime::now()) {
-                error!("Update cache file time error: path={:?}, err={}", &path, err);
+                error!("Update cache file time error: path={:?}, err={}", path, err);
             }
         })
         .await;
@@ -452,13 +452,13 @@ impl CacheManager {
                 } else {
                     warn!("Delete not in static range dir: {}", l2_path.to_str().unwrap_or_default());
                     if let Err(err) = remove_dir_all(&l2_path).await {
-                        error!("Delete cache dir error: path={:?}, err={}", &l2_path, err);
+                        error!("Delete cache dir error: path={:?}, err={}", l2_path, err);
                     }
                 }
             }
         }
 
-        debug!("Cache dir number: {}", &dirs.len());
+        debug!("Cache dir number: {}", dirs.len());
 
         let mut counter = 0;
         let total = dirs.len();
@@ -508,10 +508,10 @@ impl CacheManager {
 
                     let size = metadata.len();
                     if size != info.size() as u64 {
-                        warn!("Delete corrupt cache file: path={:?}, size={:x?}, actual={:x?}", &path, &info.size(), size);
+                        warn!("Delete corrupt cache file: path={:?}, size={:x?}, actual={:x?}", path, info.size(), size);
 
                         if let Err(err) = remove_file(&path).await {
-                            error!("Delete corrupt cache file error: path={:?}, err={}", &path, err);
+                            error!("Delete corrupt cache file error: path={:?}, err={}", path, err);
                         }
                         return;
                     }
@@ -542,7 +542,7 @@ impl CacheManager {
                         }
                         let actual_hash = hasher.finish();
                         if actual_hash.as_ref() != info.hash {
-                            warn!("Delete corrupt cache file: path={:?}, hash={:x?}, actual={:x?}", path, &info.hash, &actual_hash);
+                            warn!("Delete corrupt cache file: path={:?}, hash={:x?}, actual={:x?}", path, info.hash, actual_hash);
                             if let Err(err) = remove_file(&path).await {
                                 error!("Delete corrupt cache file error: path={:?}, err={}", path, err);
                             }

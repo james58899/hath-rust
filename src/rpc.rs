@@ -107,7 +107,14 @@ impl Settings {
 }
 
 impl RPCClient {
-    pub fn new(id: i32, key: &str, disable_ip_check: bool, max_connection: u64, bootstrap_server: Option<&str>, local_addr: Option<IpAddr>) -> Self {
+    pub fn new(
+        id: i32,
+        key: &str,
+        disable_ip_check: bool,
+        max_connection: u64,
+        bootstrap_server: Option<&str>,
+        local_addr: Option<IpAddr>,
+    ) -> Self {
         if disable_ip_check {
             warn!("Disable server command ip check!");
         }
@@ -121,7 +128,7 @@ impl RPCClient {
             clock_offset: AtomicI64::new(0),
             id,
             key: key.to_string(),
-            reqwest: create_http_client(Duration::from_secs(600), None, local_addr.clone()),
+            reqwest: create_http_client(Duration::from_secs(600), None, local_addr),
             rpc_servers: RwLock::new(vec![]),
             running: AtomicBool::new(false),
             settings: Arc::new(Settings {

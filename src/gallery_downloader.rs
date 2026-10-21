@@ -1,5 +1,9 @@
 use std::{
-    collections::HashSet, net::IpAddr, path::{Path, PathBuf}, sync::Arc, time::Duration
+    collections::HashSet,
+    net::IpAddr,
+    path::{Path, PathBuf},
+    sync::Arc,
+    time::Duration,
 };
 
 use aws_lc_rs::digest;
@@ -32,7 +36,13 @@ pub struct GalleryDownloader {
 }
 
 impl GalleryDownloader {
-    pub fn new<P: AsRef<Path>>(client: Arc<RPCClient>, download_dir: P, proxy: Option<Proxy>, metrics: Arc<Metrics>, local_addr: Option<IpAddr>) -> GalleryDownloader {
+    pub fn new<P: AsRef<Path>>(
+        client: Arc<RPCClient>,
+        download_dir: P,
+        proxy: Option<Proxy>,
+        metrics: Arc<Metrics>,
+        local_addr: Option<IpAddr>,
+    ) -> GalleryDownloader {
         GalleryDownloader {
             client,
             download_dir: download_dir.as_ref().to_path_buf(),
@@ -95,9 +105,9 @@ impl GalleryDownloader {
                 let semaphore = Arc::new(Semaphore::new(MAX_DOWNLOAD_TASK as usize));
                 let use_proxy = retry != 0 && self.proxy.is_some();
                 let reqwest = if use_proxy {
-                    util::create_http_client(Duration::from_secs(300), self.proxy.clone(), self.local_addr.clone())
+                    util::create_http_client(Duration::from_secs(300), self.proxy.clone(), self.local_addr)
                 } else {
-                    util::create_http_client(Duration::from_secs(300), None, self.local_addr.clone())
+                    util::create_http_client(Duration::from_secs(300), None, self.local_addr)
                 };
                 for info in &meta.gallery_files {
                     let info = info.clone();
@@ -130,7 +140,7 @@ impl GalleryDownloader {
                             let downloaded_files = downloaded_files.clone();
                             let mut reqwest = reqwest.clone();
                             let metrics = self.metrics.clone();
-                            let local_addr = self.local_addr.clone();
+                            let local_addr = self.local_addr;
                             tokio::spawn(async move {
                                 for retry in 0..3 {
                                     let reqwest2 = reqwest.clone();
@@ -146,7 +156,7 @@ impl GalleryDownloader {
                                         // Try download without proxy at third time
                                         if retry == 1 && use_proxy {
                                             warn!("Retry download without proxy...");
-                                            reqwest = util::create_http_client(Duration::from_secs(300), None, local_addr.clone());
+                                            reqwest = util::create_http_client(Duration::from_secs(300), None, local_addr);
                                         }
 
                                         if retry == 2

@@ -1,7 +1,15 @@
 #![windows_subsystem = "windows"]
 #[cfg(not(target_env = "msvc"))]
 use std::ffi::{CStr, c_char};
-use std::{collections::HashMap, error::Error, net::{IpAddr, Ipv4Addr}, ops::RangeInclusive, path::Path, sync::Arc, time::Duration};
+use std::{
+    collections::HashMap,
+    error::Error,
+    net::{IpAddr, Ipv4Addr},
+    ops::RangeInclusive,
+    path::Path,
+    sync::Arc,
+    time::Duration,
+};
 
 use clap::Parser;
 use const_format::formatcp;
@@ -220,7 +228,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
         Some(i) => i,
         None => setup(&args.data_dir).await?,
     };
-    let client = Arc::new(RPCClient::new(id, &key, args.disable_ip_origin_check, args.max_connection, args.rpc_server_ip.as_deref(), args.host.clone()));
+    let client =
+        Arc::new(RPCClient::new(id, &key, args.disable_ip_origin_check, args.max_connection, args.rpc_server_ip.as_deref(), args.host));
     let init_settings = match client.login().await {
         Ok(settings) => settings,
         Err(err) => {
@@ -270,14 +279,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let host = args.host;
     let cert = client.get_cert().await.expect("Failed to get server certificate");
     let state = AppState {
-        reqwest: create_http_client(Duration::from_secs(30), proxy.clone(), args.host.clone()),
+        reqwest: create_http_client(Duration::from_secs(30), proxy.clone(), args.host),
         rpc: client.clone(),
         download_state: Default::default(),
         cache_manager: cache_manager.clone(),
         command_channel: tx.clone(),
         has_proxy: proxy.is_some(),
         metrics: metrics.clone(),
-        local_addr: args.host.clone(),
+        local_addr: args.host,
     };
     let flood_control = !(args.disable_flood_control || args.disable_ip_origin_check);
     let Some(server) = Server::new(
@@ -358,7 +367,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 Command::StartDownloader => {
                     let mut downloader = downloader2.lock();
                     if downloader.is_none() {
-                        let new = GalleryDownloader::new(client2.clone(), &args.download_dir, proxy.clone(), metrics2.clone(), args.host.clone());
+                        let new = GalleryDownloader::new(client2.clone(), &args.download_dir, proxy.clone(), metrics2.clone(), args.host);
                         let downloader3 = downloader2.clone();
                         *downloader = Some(tokio::spawn(async move {
                             new.run().await;

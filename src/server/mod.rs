@@ -124,7 +124,7 @@ impl Server {
         let handle = Arc::new(ServerHandle::new(cert_store.clone()));
 
         let acceptor = TlsAcceptor::from(Arc::new(create_ssl_config(provider.clone(), cert_store.clone())));
-        let listener = match bind(SocketAddr::from((host.clone(), port))) {
+        let listener = match bind(SocketAddr::from((host, port))) {
             Ok(listener) => listener,
             Err(err) => {
                 error!("Bind port error: {err}");
