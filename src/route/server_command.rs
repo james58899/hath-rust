@@ -70,7 +70,7 @@ pub(super) async fn servercmd(
                 let random: u32 = fastrand::u32(..);
                 let url = Url::parse(&format!("{protocol}://{host}:{port}/t/{size}/{time}/{token}/{random}")).unwrap();
                 debug!("Speedtest thread start: {}", url);
-                let reqwest = create_http_client(Duration::from_secs(60), None); // No proxy http client
+                let reqwest = create_http_client(Duration::from_secs(60), None, data.local_addr.clone()); // No proxy http client
                 requests.push(tokio::spawn(async move {
                     for retry in 0..3 {
                         if retry > 0 {

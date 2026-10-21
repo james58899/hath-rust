@@ -226,7 +226,7 @@ pub(super) async fn hath(
 
                         // Disable proxy on connect error and third retry
                         if use_proxy && (err.is_connect() || retry == 1) {
-                            reqwest = create_http_client(Duration::from_secs(30), None);
+                            reqwest = create_http_client(Duration::from_secs(30), None, data.local_addr.clone());
                             use_proxy = false;
                         }
 
