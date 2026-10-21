@@ -22,7 +22,7 @@ use hyper_util::{
     rt::{TokioIo, TokioTimer},
     service::TowerToHyperService,
 };
-use log::{error, info};
+use log::{error, info, warn};
 use parking_lot::Mutex;
 use quinn::{BloomTokenLog, Endpoint, TransportConfig, ValidationTokenConfig, crypto::rustls::QuicServerConfig};
 use rustls::{
@@ -149,19 +149,21 @@ impl Server {
         router = middleware::register_layer(router, &option.data, option.server_header);
         let router = router.with_state(Arc::new(option.data));
 
-        // Accept loop
-        let h3_port = if option.h3 { Some(port) } else { None };
-        let accept_task = tokio::spawn(accept_loop(handle.clone(), listener, acceptor, http, router.clone(), flood_control, h3_port));
-
-        // h3
-        let accept_task_h3 = if option.h3 {
+        // h3, bind before the accept loop so Alt-Svc is only advertised when it works
+        let endpoint = if option.h3 {
             info!("Enable experimental HTTP3 support. Please ensure UDP port {port} is open.");
             let quinn_config = create_quic_config(provider, cert_store);
-            let endpoint = quinn::Endpoint::server(quinn_config, SocketAddr::from((host, port))).unwrap();
-            Some(tokio::spawn(accept_loop_h3(handle.clone(), endpoint, router, flood_control)))
+            quinn::Endpoint::server(quinn_config, SocketAddr::from((host, port)))
+                .inspect_err(|err| warn!("Bind UDP port error, HTTP3 disabled: {err}"))
+                .ok()
         } else {
             None
         };
+
+        // Accept loop
+        let h3_port = endpoint.as_ref().map(|_| port);
+        let accept_task = tokio::spawn(accept_loop(handle.clone(), listener, acceptor, http, router.clone(), flood_control, h3_port));
+        let accept_task_h3 = endpoint.map(|endpoint| tokio::spawn(accept_loop_h3(handle.clone(), endpoint, router, flood_control)));
 
         Some(Self {
             handle,

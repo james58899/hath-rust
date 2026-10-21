@@ -7,9 +7,8 @@ fn main() {
     }
 
     // Version
-    if let gix = Gix::builder().sha(true).build()
-        && Emitter::new().fail_on_error().add_instructions(&gix).and_then(|e| e.emit()).is_ok()
-    {
+    let gix = Gix::builder().sha(true).build();
+    if Emitter::new().fail_on_error().add_instructions(&gix).and_then(|e| e.emit()).is_ok() {
         return;
     }
 
