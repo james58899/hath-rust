@@ -34,12 +34,12 @@ mime = "0.3.17"
 p12 = "0.6.3"
 parking_lot = { version = "0.12.5", features = ["hardware-lock-elision"] }
 pin-project-lite = "0.2.17"
-prometheus-client = "0.24.1"
+prometheus-client = "0.25.1"
 quinn = { version = "0.11.9", default-features = false, features = ["bloom", "runtime-tokio", "rustls-aws-lc-rs"] }
 regex-lite = "0.1.9"
 reqwest = { version = "0.13.3", default-features = false, features = ["rustls-no-provider", "stream", "socks"] }
 rmp-serde = "1.3.1"
-rustls = { version = "=0.23.35", default-features = false, features = ["brotli", "aws_lc_rs", "std", "tls12", "zlib"] } # Patch rustls to support Prioritize ChaCha20
+rustls = { version = "=0.23.46", default-features = false, features = ["brotli", "aws_lc_rs", "std", "tls12", "zlib"] } # Patch rustls to support Prioritize ChaCha20
 scopeguard = "1.2.0"
 serde = { version = "1.0.228", features = ["serde_derive"] }
 tempfile = "3.26.0"
@@ -48,36 +48,36 @@ tokio-rustls = { version = "0.26.4", default-features = false, features = ["tls1
 tokio-stream = { version = "0.1.18", default-features = false, features = ["fs"] }
 tokio-util = { version = "0.7.18", features = ["io"] }
 tower = { version = "0.5.3", features = ["timeout"] }
-tower-http = { version = "0.6.8", features = ["set-header"] }
+tower-http = { version = "0.7.1", features = ["set-header"] }
 unicode-segmentation = "1.13.2"
 webpki-roots = "1.0.7"
 
 # cpufeatures not support all platforms
 [target.'cfg(any(target_arch = "x86", target_arch = "x86_64", target_arch = "aarch64"))'.dependencies]
-cpufeatures = "0.3.0"
+cpufeatures = "0.3.1"
 
 [target.'cfg(not(any(target_env = "msvc", target_vendor = "apple")))'.dependencies]
-tikv-jemallocator = { version = "0.6.1", features = ["background_threads", "override_allocator_on_supported_platforms"] }
+tikv-jemallocator = { version = "0.7.0", features = ["background_threads", "override_allocator_on_supported_platforms"] }
 
 [target.'cfg(target_vendor = "apple")'.dependencies]
-tikv-jemallocator = { version = "0.6.1", features = ["override_allocator_on_supported_platforms"] } # jemalloc not support background threads on macos
+tikv-jemallocator = { version = "0.7.0", features = ["override_allocator_on_supported_platforms"] } # jemalloc not support background threads on macos
 
 [target.'cfg(unix)'.dependencies]
 rustix = { version = "1.1.4", features = ["fs"] }
 
 [target.'cfg(windows)'.dependencies]
-tray-icon = { version = "0.24.0", default-features = false }
-windows = { version = "0.61.3", features = ["Win32_Foundation", "Win32_System_Console", "Win32_UI_WindowsAndMessaging", "Win32_Storage_FileSystem"] }
-tao = "0.35.0"
+tray-icon = { version = "0.26.1", default-features = false }
+windows = { version = "0.62.2", features = ["Win32_Foundation", "Win32_System_Console", "Win32_UI_WindowsAndMessaging", "Win32_Storage_FileSystem"] }
+tao = "0.37.1"
 
 [build-dependencies]
-vergen-gix = "9.1.0"
+vergen-gix = "10.0.3"
 
 [target.'cfg(windows)'.build-dependencies]
 tauri-winres = "0.3.6"
 
 [patch.crates-io]
-rustls = { git = "https://github.com/james58899/rustls.git", tag = "0.23.35-patch" }
+rustls = { git = "https://github.com/james58899/rustls.git", tag = "0.23.46-patch" }
 
 [profile.release]
 lto = true

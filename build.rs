@@ -1,4 +1,4 @@
-use vergen_gix::{Emitter, GixBuilder};
+use vergen_gix::{Emitter, Gix};
 
 fn main() {
     // Windows manifest
@@ -7,7 +7,7 @@ fn main() {
     }
 
     // Version
-    if let Ok(gix) = GixBuilder::default().sha(true).build()
+    if let gix = Gix::builder().sha(true).build()
         && Emitter::new().fail_on_error().add_instructions(&gix).and_then(|e| e.emit()).is_ok()
     {
         return;
