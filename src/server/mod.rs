@@ -255,7 +255,8 @@ fn bind(addr: SocketAddr) -> io::Result<TcpListener> {
 async fn accept(listener: &mut TcpListener) -> (TcpStream, SocketAddr) {
     loop {
         match listener.accept().await {
-            Ok(value) => return value,
+            // Unmap IPv4-mapped IPv6
+            Ok((stream, addr)) => return (stream, SocketAddr::new(addr.ip().to_canonical(), addr.port())),
             Err(_) => tokio::time::sleep(Duration::from_millis(50)).await, // Too many open files, retry.
         }
     }
@@ -358,6 +359,7 @@ async fn accept_loop_h3(handle: Arc<ServerHandle>, endpoint: Endpoint, router: R
         };
 
         let addr = new_conn.remote_address();
+        let addr = SocketAddr::new(addr.ip().to_canonical(), addr.port()); // Unmap IPv4-mapped IPv6
 
         // Process connection
         let router = router.clone();

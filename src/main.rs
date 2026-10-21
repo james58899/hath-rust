@@ -276,7 +276,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     info!("Starting HTTP server...");
     let port = args.port.unwrap_or_else(|| init_settings.client_port());
-    let host = args.host;
     let cert = client.get_cert().await.expect("Failed to get server certificate");
     let state = AppState {
         reqwest: create_http_client(Duration::from_secs(30), proxy.clone(), args.host),
@@ -290,7 +289,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     };
     let flood_control = !(args.disable_flood_control || args.disable_ip_origin_check);
     let Some(server) = Server::new(
-        ServerOptions::new(port, host.unwrap_or(Ipv4Addr::new(0, 0, 0, 0).into()), cert, state)
+        ServerOptions::new(port, args.host.unwrap_or(Ipv4Addr::UNSPECIFIED.into()), cert, state)
             .flood_control(flood_control)
             .metrics(args.enable_metrics)
             .sni_strict(args.sni_strict)
