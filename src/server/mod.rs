@@ -427,9 +427,7 @@ async fn accept_loop_h3(handle: Arc<ServerHandle>, endpoint: Endpoint, router: R
                         return;
                     }
 
-                    let mut request = Request::builder().version(req.version()).method(req.method()).uri(req.uri());
-                    *request.headers_mut().unwrap() = req.headers().clone();
-                    let request = request.body(Body::empty()).unwrap(); // We don't read body
+                    let request = Request::from_parts(req.into_parts().0, Body::empty()); // We don't read body
 
                     // ref: https://github.com/hyperium/h3/issues/261#issuecomment-2352838801
                     // Call Service
@@ -446,27 +444,39 @@ async fn accept_loop_h3(handle: Arc<ServerHandle>, endpoint: Endpoint, router: R
                     if (stream.send_response(response).await).is_err() {
                         return;
                     }
-                    // Send body and trailers
-                    while let Some(chunk) = body.frame().await {
-                        match chunk {
-                            Ok(frame) if frame.is_data() => {
-                                if stream.send_data(frame.into_data().unwrap()).await.is_err() {
-                                    return;
+                    // Send body and trailers, timeout to prevent client hold stream forever
+                    let send_body = async {
+                        while let Some(chunk) = body.frame().await {
+                            match chunk {
+                                Ok(frame) if frame.is_data() => {
+                                    if stream.send_data(frame.into_data().unwrap()).await.is_err() {
+                                        return false;
+                                    }
                                 }
-                            }
-                            Ok(frame) => {
-                                if stream.send_trailers(frame.into_trailers().unwrap()).await.is_err() {
-                                    return;
+                                Ok(frame) => {
+                                    if stream.send_trailers(frame.into_trailers().unwrap()).await.is_err() {
+                                        return false;
+                                    }
                                 }
-                            }
-                            Err(err) => {
-                                error!("{{h3/{addr}}} Failed to read stream: {err}");
-                                stream.stop_stream(Code::H3_INTERNAL_ERROR);
-                                return;
+                                Err(err) => {
+                                    error!("{{h3/{addr}}} Failed to read stream: {err}");
+                                    stream.stop_stream(Code::H3_INTERNAL_ERROR);
+                                    return false;
+                                }
                             }
                         }
+                        true
+                    };
+                    match timeout(Duration::from_secs(181), send_body).await {
+                        Ok(true) => {}
+                        Ok(false) => return,
+                        Err(_) => {
+                            stream.stop_stream(Code::H3_REQUEST_CANCELLED);
+                            return;
+                        }
                     }
-                    while let Ok(Some(_)) = stream.recv_data().await {} // All data must be read to receive ACK
+                    // All data must be read to receive ACK, timeout to prevent client hold stream forever
+                    let _ = timeout(Duration::from_secs(181), async { while let Ok(Some(_)) = stream.recv_data().await {} }).await;
                     let _ = stream.finish().await;
                     drop(request_done); // Notify request complete
                 });
