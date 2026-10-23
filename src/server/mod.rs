@@ -11,7 +11,7 @@ use std::{
 
 use axum::{Extension, Router, body::Body, extract::Request, http::HeaderValue, response::Response, routing::get};
 use futures::pin_mut;
-use h3::{error::Code, server::Connection};
+use h3::error::Code;
 use h3_quinn::quinn;
 use http_body_util::BodyExt;
 use hyper::{
@@ -381,7 +381,9 @@ async fn accept_loop_h3(handle: Arc<ServerHandle>, endpoint: Endpoint, router: R
             };
 
             // H3 Handshake
-            let mut h3_conn = match Connection::new(h3_quinn::Connection::new(conn)).await {
+            let mut h3_builder = h3::server::builder();
+            h3_builder.max_field_section_size(64 * 1024); // Limit max header size
+            let mut h3_conn = match h3_builder.build(h3_quinn::Connection::new(conn)).await {
                 Ok(conn) => conn,
                 Err(_) => return,
             };
