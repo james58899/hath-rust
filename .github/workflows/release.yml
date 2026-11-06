@@ -34,7 +34,7 @@ jobs:
           mv artifacts/hath-rust-i686-linux-android/hath-rust hath-rust-i686-linux-android || true
           mv artifacts/hath-rust-x86_64-linux-android/hath-rust hath-rust-x86_64-linux-android
       - name: Create release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           draft: true
           generate_release_notes: true
