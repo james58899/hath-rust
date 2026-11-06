@@ -1,7 +1,7 @@
 use std::{
     collections::HashSet,
     net::IpAddr,
-    path::{Path, PathBuf},
+    path::{Component, Path, PathBuf},
     sync::Arc,
     time::Duration,
 };
@@ -17,7 +17,7 @@ use tokio::{
     fs::{self, create_dir_all},
     io::{AsyncReadExt, AsyncWriteExt},
     sync::Semaphore,
-    time::{Instant, sleep, sleep_until},
+    time::{Instant, sleep_until},
 };
 use unicode_segmentation::UnicodeSegmentation;
 
@@ -64,11 +64,7 @@ impl GalleryDownloader {
                 Ok(meta) => Arc::new(meta),
                 Err(e) => {
                     warn!("Failed to parse metadata for new gallery. {}", e);
-
-                    // Sleep 5s and retry
-                    sleep(Duration::from_secs(5)).await;
-                    task = self.client.fetch_queue(None).await.map(GalleryDownloader::parser);
-                    continue;
+                    return;
                 }
             };
 
@@ -213,6 +209,8 @@ impl GalleryDownloader {
 
     fn parser(raw_gallery: Vec<String>) -> Result<GalleryMeta, BoxError> {
         debug!("GalleryDownloader: Started gallery metadata parsing");
+        let allow_filetype = Regex::new(r#"^(jpg|gif|png|webp)$"#).unwrap();
+        let allow_filename = Regex::new(r#"^[a-zA-Z0-9._-]{1,250}$"#).unwrap();
 
         let mut gid = 0;
         let mut filecount = 0;
@@ -261,7 +259,8 @@ impl GalleryDownloader {
                         }
                     }
                     "TITLE" => {
-                        let pattern = Regex::new(r#"(\*|"|\\|<|>|:\|\?)"#).unwrap().replace_all(split[1], "");
+                        // Remove `*"\<>:|?/` and replace any space char to real space char, also trim start end space.
+                        let pattern = Regex::new(r#"[*"\\<>:|?/]"#).unwrap().replace_all(split[1], "");
                         let pattern = Regex::new(r"\s+").unwrap().replace_all(&pattern, " ");
                         let pattern = Regex::new(r"(^\s+|\s+$)").unwrap().replace_all(&pattern, "").to_string();
                         title = pattern;
@@ -284,9 +283,15 @@ impl GalleryDownloader {
                 // sha1hash can be "unknown" if the file has not been generated yet
                 let sha1hash = decode_to_array(split[3]).ok();
 
-                // the server guarantees that all filenames in the meta file are unique, and that none of them are reserved device filenames
+                // the server checks that all filenames in the meta file are unique, and that none of them are reserved device filenames
                 let filetype = split[4].to_string();
+                if !allow_filetype.is_match(&filetype) {
+                    return Err(format!("Invalid filetype: page={page} filetype={filetype}").into());
+                }
                 let filename = split[5].to_string();
+                if !is_safe_path(&filename) || !allow_filename.is_match(&filename) {
+                    return Err(format!("Invalid filename: page={page} filename={filename}").into());
+                }
 
                 gallery_files.push(Arc::new(GalleryFile {
                     page,
@@ -417,4 +422,9 @@ impl GalleryMeta {
     pub fn minxres(&self) -> &str {
         self.minxres.as_ref()
     }
+}
+
+fn is_safe_path(name: &str) -> bool {
+    let mut iter = Path::new(name).components();
+    matches!((iter.next(), iter.next()), (Some(Component::Normal(_)), None))
 }
