@@ -24,7 +24,7 @@ use crate::{
     util::{create_http_client, string_to_hash},
 };
 
-const API_VERSION: i32 = 178; // For server check capabilities.
+const API_VERSION: i32 = 181; // For server check capabilities.
 const DEFAULT_SERVER: &str = "rpc.hentaiathome.net";
 
 type RequestError = Box<dyn std::error::Error + Send + Sync>;
@@ -124,7 +124,7 @@ impl RPCClient {
 
         let host = bootstrap_server.unwrap_or(DEFAULT_SERVER);
         Self {
-            api_base: RwLock::new(Url::parse(format!("http://{host}/15/rpc?clientbuild={API_VERSION}").as_str()).unwrap()),
+            api_base: RwLock::new(Url::parse(format!("http://{host}/16/rpc?clientbuild={API_VERSION}").as_str()).unwrap()),
             clock_offset: AtomicI64::new(0),
             id,
             key: key.to_string(),
@@ -336,11 +336,11 @@ The program will now terminate.
         if let Ok(res) = self.send_request(url).await {
             debug!("Received response: {}", res);
             let lines: Vec<String> = res.lines().map(|s| s.to_string()).collect();
-            match lines[0].as_str() {
-                "INVALID_REQUEST" => {
+            match lines.first().map(String::as_str) {
+                Some("INVALID_REQUEST") => {
                     warn!("Request was rejected by the server");
                 }
-                "NO_PENDING_DOWNLOADS" => (),
+                Some("NO_PENDING_DOWNLOADS") => (),
                 _ => return Some(lines),
             }
         };
@@ -407,16 +407,14 @@ The program will now terminate.
     }
 
     async fn check_stat(&self) -> Result<Option<(i32, i32)>, Error> {
-        let mut url = self.api_base.read().clone();
-        url.query_pairs_mut().append_pair("act", "server_stat");
         let start_time = Instant::now();
         let body = self
-            .send_request(url)
+            .send_request(self.build_url("server_stat", "", None))
             .await
             .map_err(|_| Error::connection_error("Failed to get initial stat from server."))?;
         let request_time = TimeDelta::from_std(start_time.elapsed()).unwrap_or_default();
         debug!("{}", body);
-        let res = parse_response(body.as_str());
+        let res = self.parse_response(body.as_str());
 
         if res.is_ok() {
             let data = res.to_map();
@@ -455,10 +453,16 @@ The program will now terminate.
             match self.send_request(self.build_url(action, additional, None)).await {
                 Ok(body) => {
                     debug!("Received response: {}", body);
-                    let response = parse_response(&body);
+                    let response = self.parse_response(&body);
                     if response.is_key_expired() {
                         warn!("Server reported expired key; attempting to refresh time from server and retrying");
                         let _ = self.check_stat().await; // Sync clock
+                        continue;
+                    }
+                    if response.is_hash_fail() {
+                        warn!("Received an invalid response hash from the server");
+                        error = "Received an invalid response hash from the server".into();
+                        self.change_server();
                         continue;
                     }
                     return Ok(response);
@@ -487,6 +491,44 @@ The program will now terminate.
         }
 
         res.text().await
+    }
+
+    fn parse_response(&self, res: &str) -> ApiResponse {
+        let mut lines = res.lines();
+        let status = lines.next();
+        match status {
+            Some(s) if s.starts_with("OK") => {
+                let mut status_line = s.split("-");
+                let status = status_line.next().unwrap_or_default().to_string();
+                let time = status_line.next().map(i32::from_str).transpose().ok().flatten().unwrap_or_default();
+                let hash = status_line.next().unwrap_or_default(); // hash from time + key + body
+                let data: Vec<String> = lines.map(|s| s.to_string()).collect();
+
+                let mut hash_body = format!("{time}-{}", self.key);
+                if !data.is_empty() {
+                    hash_body.push('\n');
+                    hash_body.push_str(&data.join("\n"));
+                }
+
+                if !hash.is_empty() && string_to_hash(hash_body) == hash {
+                    ApiResponse { status, data }
+                } else {
+                    let host = self.api_base.read().host().map(|h| h.to_string()).unwrap_or_default();
+                    ApiResponse {
+                        status: "RESPONSE_HASH_FAILED".to_string(),
+                        data: vec![host],
+                    }
+                }
+            }
+            Some(s) => ApiResponse {
+                status: s.to_string(),
+                data: lines.map(|s| s.to_string()).collect(),
+            },
+            None => ApiResponse {
+                status: "NO_RESPONSE".to_string(),
+                data: vec![],
+            },
+        }
     }
 
     fn build_url(&self, action: &str, additional: &str, endpoint: Option<&str>) -> Url {
@@ -576,6 +618,10 @@ impl ApiResponse {
         self.status == "KEY_EXPIRED"
     }
 
+    fn is_hash_fail(&self) -> bool {
+        self.status == "RESPONSE_HASH_FAILED"
+    }
+
     /// Parse data to HashMap
     fn to_map(&self) -> HashMap<&str, &str> {
         let mut map = HashMap::new();
@@ -591,20 +637,5 @@ impl ApiResponse {
         }
 
         map
-    }
-}
-
-fn parse_response(res: &str) -> ApiResponse {
-    let mut lines = res.lines();
-    let status = lines.next();
-    match status {
-        Some(s) => ApiResponse {
-            status: s.to_string(),
-            data: lines.map(|s| s.to_string()).collect(),
-        },
-        None => ApiResponse {
-            status: "NO_RESPONSE".to_string(),
-            data: vec![],
-        },
     }
 }

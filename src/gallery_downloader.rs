@@ -21,7 +21,12 @@ use tokio::{
 };
 use unicode_segmentation::UnicodeSegmentation;
 
-use crate::{error::Error, metrics::Metrics, rpc::RPCClient, util};
+use crate::{
+    error::Error,
+    metrics::Metrics,
+    rpc::RPCClient,
+    util::{self, string_to_hash},
+};
 
 type BoxError = Box<dyn std::error::Error + Send + Sync>;
 
@@ -53,7 +58,7 @@ impl GalleryDownloader {
     }
 
     pub async fn run(&self) {
-        let mut task = self.client.fetch_queue(None).await.map(GalleryDownloader::parser);
+        let mut task = self.client.fetch_queue(None).await.map(|meta| self.parser(meta));
 
         'task: while let Some(meta) = task {
             if !self.client.is_running() {
@@ -203,11 +208,11 @@ impl GalleryDownloader {
                 warn!("Permanently failed downloading gallery: {}", meta.title);
             }
 
-            task = self.client.fetch_queue(Some(&meta)).await.map(GalleryDownloader::parser);
+            task = self.client.fetch_queue(Some(&meta)).await.map(|meta| self.parser(meta));
         }
     }
 
-    fn parser(raw_gallery: Vec<String>) -> Result<GalleryMeta, BoxError> {
+    fn parser(&self, raw_gallery: Vec<String>) -> Result<GalleryMeta, BoxError> {
         debug!("GalleryDownloader: Started gallery metadata parsing");
         let allow_filetype = Regex::new(r#"^(jpg|gif|png|webp)$"#).unwrap();
         let allow_filename = Regex::new(r#"^[a-zA-Z0-9._-]{1,250}$"#).unwrap();
@@ -216,11 +221,14 @@ impl GalleryDownloader {
         let mut filecount = 0;
         let mut minxres = String::new();
         let mut xres_title = String::new();
+        let mut dl_hash = String::new();
         let mut title = String::new();
         let mut information = String::new();
         let mut gallery_files: Vec<Arc<GalleryFile>> = Vec::new();
 
         let mut parse_state = 0;
+        let mut hash_body = String::new();
+        hash_body.push_str(self.client.key());
         for s in raw_gallery {
             if s == "FILELIST" && parse_state == 0 {
                 parse_state = 1;
@@ -258,6 +266,14 @@ impl GalleryDownloader {
                             error!("Encountered invalid minxres");
                         }
                     }
+                    "DLHASH" => {
+                        if Regex::new(r"^[a-f0-9]{40}$").unwrap().is_match(split[1]) {
+                            dl_hash = split[1].to_string();
+                            debug!("GalleryDownloader: Parsed dlhash={dl_hash}");
+                        } else {
+                            error!("Encountered invalid dlhash");
+                        }
+                    }
                     "TITLE" => {
                         // Remove `*"\<>:|?/` and replace any space char to real space char, also trim start end space.
                         let pattern = Regex::new(r#"[*"\\<>:|?/]"#).unwrap().replace_all(split[1], "");
@@ -272,6 +288,10 @@ impl GalleryDownloader {
                     _ => (),
                 }
             } else if parse_state == 1 {
+                // Hash check
+                hash_body.push('\n');
+                hash_body.push_str(&s);
+
                 // File list
                 let split = s.splitn(6, ' ').collect::<Vec<&str>>();
 
@@ -305,6 +325,11 @@ impl GalleryDownloader {
                 // Gallery info
                 information += &(s + "\n");
             }
+        }
+
+        let hash = string_to_hash(hash_body);
+        if dl_hash.is_empty() || hash != dl_hash {
+            return Err(format!("GalleryDownloader: Aborted download; checkedHash={hash} does not match expected dlhash={dl_hash}").into());
         }
 
         Ok(GalleryMeta {
