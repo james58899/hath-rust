@@ -620,7 +620,7 @@ impl CacheManager {
         }
 
         debug!("Start cache cleaner: need_free={}bytes", need_free);
-        while need_free > 0 {
+        while need_free > 0 && size_limit == self.size_limit.load(Relaxed) {
             // Select the oldest directory
             let static_range;
             let target_dir;
