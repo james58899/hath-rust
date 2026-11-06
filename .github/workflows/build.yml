@@ -90,17 +90,8 @@ jobs:
       cancel-in-progress: false
     steps:
     - uses: actions/checkout@v7
-    - name: Install LLVM
-      run: |
-        wget https://apt.llvm.org/llvm.sh
-        chmod +x llvm.sh
-        sudo ./llvm.sh 23
-    - name: Install amd64 headers
-      if: ${{ matrix.target == 'x86_64-unknown-linux-musl' }}
-      run: sudo apt-get install -y libgcc-11-dev-amd64-cross
-    - name: Install arm headers
-      if: ${{ matrix.target == 'armv7-unknown-linux-musleabihf' }}
-      run: sudo apt-get install -y libgcc-11-dev-armhf-cross
+    - name: Install zigbuild
+      run: pip install cargo-zigbuild
     - uses: actions/cache@v6
       with:
         path: |
@@ -118,15 +109,7 @@ jobs:
       if: ${{ matrix.target == 'aarch64-unknown-linux-musl' }}
       run: echo "JEMALLOC_SYS_WITH_LG_PAGE=16" >> $GITHUB_ENV
     - name: Build
-      env:
-        CC: clang-23
-        CXX: clang-23
-        CFLAGS: "-fuse-ld=lld-23 -Qunused-arguments"
-        CXXFLAGS: "-fuse-ld=lld-23 -Qunused-arguments"
-        CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_RUSTFLAGS: "-Clinker=clang-23 -Clink-arg=-fuse-ld=lld-23 -Clink-arg=--target=x86_64-unknown-linux-musl"
-        CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_RUSTFLAGS: "-Clinker=clang-23 -Clink-arg=-fuse-ld=lld-23 -Clink-arg=--target=aarch64-unknown-linux-musl"
-        CARGO_TARGET_ARMV7_UNKNOWN_LINUX_MUSLEABIHF_RUSTFLAGS: "-Clinker=clang-23 -Clink-arg=-fuse-ld=lld-23 -Clink-arg=--target=armv7-unknown-linux-musleabihf"
-      run: cargo build --verbose --release --target=${{ matrix.target }}
+      run: cargo zigbuild --verbose --release --target=${{ matrix.target }}
     - uses: actions/upload-artifact@v7
       with:
         name: hath-rust-${{ matrix.target }}
